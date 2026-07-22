@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "esbenp.prettier-vscode",      // Code formatter
+    "dbaeumer.vscode-eslint",       // Linter (or language equivalent)
+    "eamodio.gitlens",              // Git history
+    "editorconfig.editorconfig",    // Cross-editor formatting
+    "usernamehw.error-lens"        // Highlight errors inline
+  ]
+}
