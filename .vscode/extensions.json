@@ -1,9 +1,17 @@
 {
   "recommendations": [
-    "esbenp.prettier-vscode",      // Code formatter
-    "dbaeumer.vscode-eslint",       // Linter (or language equivalent)
-    "eamodio.gitlens",              // Git history
-    "editorconfig.editorconfig",    // Cross-editor formatting
-    "usernamehw.error-lens"        // Highlight errors inline
+    // Core Python & IntelliSense
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+
+    // Modern Linter & Formatter (replaces Flake8, Black, and isort)
+    "charliermarsh.ruff",
+
+    // Environment & Testing support
+    "ms-python.debugpy",
+
+    // Code Quality & Consistency
+    "editorconfig.editorconfig",
+    "usernamehw.error-lens"
   ]
 }
