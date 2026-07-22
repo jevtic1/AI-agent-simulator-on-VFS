@@ -1,0 +1,27 @@
+repos:
+  # 1. Standard pre-commit hooks for general file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace      # Removes unnecessary trailing spaces
+      - id: end-of-file-fixer        # Ensures files end with a newline
+      - id: check-yaml               # Validates syntax of YAML files
+      - id: check-added-large-files  # Prevents accidentally committing huge files
+
+  # 2. Ruff for Python Linting & Formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix]                # Runs linter and auto-fixes issues
+      - id: ruff-format              # Runs code formatter
+
+  # 3. Optional: Run pytest before allowing a commit
+  - repo: local
+    hooks:
+      - id: pytest
+        name: Run Pytest
+        entry: pytest
+        language: system
+        types: [python]
+        pass_filenames: false        # Runs the full test suite
