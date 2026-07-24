@@ -40,7 +40,7 @@ import pytest
 
 # --- IMPORT BLOCK -----------------------------------------------------------
 # Update this import path once the module is implemented.
-from src.models_agentState import AgentState
+from src.models_AgentState import AgentState
 
 # --- Shared fixtures / constants --------------------------------------------
 
