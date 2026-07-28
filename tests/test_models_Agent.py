@@ -1,6 +1,8 @@
 from enum import Enum
+
 import pytest
-from src.models_AgentState import AgentState
+
+from src.models_Agent import AgentState
 
 ALL_STATES = [
     AgentState.NEW,
