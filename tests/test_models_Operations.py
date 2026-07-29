@@ -162,3 +162,53 @@ class TestOperationAbstract:
     def test_cannot_instantiate_abstract_operation(self):
         with pytest.raises(TypeError):
             Operation()
+
+
+class TestOperationRemainingAttribute:
+    def test_think_op_remaining_initialization(self):
+        """Standard Case: ThinkOp should initialize remaining equal to its duration."""
+        op = ThinkOp(duration=7)
+        assert hasattr(op, "remaining"), "ThinkOp is missing 'remaining' attribute."
+        assert op.remaining == op.duration
+
+    def test_open_op_remaining_initialization(self):
+        """Standard Case: OpenOp should initialize remaining to 1."""
+        op = OpenOp(path="/file.txt", mode="r", handle="h1")
+        assert hasattr(op, "remaining"), "OpenOp is missing 'remaining' attribute."
+        assert op.remaining == 1
+
+    def test_read_op_remaining_initialization(self):
+        """Standard Case: ReadOp should initialize remaining to 1."""
+        op = ReadOp(handle="h1")
+        assert hasattr(op, "remaining"), "ReadOp is missing 'remaining' attribute."
+        assert op.remaining == 1
+
+    def test_write_op_remaining_initialization(self):
+        """Standard Case: WriteOp should initialize remaining to 1."""
+        op = WriteOp(handle="h1", data="Hello")
+        assert hasattr(op, "remaining"), "WriteOp is missing 'remaining' attribute."
+        assert op.remaining == 1
+
+    def test_append_op_remaining_initialization(self):
+        """Standard Case: AppendOp should initialize remaining to 1."""
+        op = AppendOp(handle="h2", data="\nNew Line")
+        assert hasattr(op, "remaining"), "AppendOp is missing 'remaining' attribute."
+        assert op.remaining == 1
+
+    def test_close_op_remaining_initialization(self):
+        """Standard Case: CloseOp should initialize remaining to 1."""
+        op = CloseOp(handle="h1")
+        assert hasattr(op, "remaining"), "CloseOp is missing 'remaining' attribute."
+        assert op.remaining == 1
+
+    def test_remaining_attribute_modification(self):
+        """Standard Case: The remaining attribute should be modifiable."""
+        op = ThinkOp(duration=10)
+        assert op.remaining == 10
+        op.remaining -= 1
+        assert op.remaining == 9
+
+        op2 = ReadOp(handle="h1")
+        assert op2.remaining == 1
+        op2.remaining -= 1
+        assert op2.remaining == 0
