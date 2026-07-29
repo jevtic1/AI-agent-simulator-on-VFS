@@ -58,9 +58,19 @@ class Agent:
             return None
         return self.operations[self.current_op_index]
 
-    def advance(self):
+    def advance(self, vfs, lock_manager):
+        # Prevent executing past the end of the operations list[cite: 6]
         if self.current_op_index < len(self.operations):
-            self.current_op_index += 1
+            op = self.operations[self.current_op_index]
 
+            # Execute must only be called directly from advance()[cite: 6]
+            op.execute(self, vfs, lock_manager)
+
+            # Only progress to the next operation if the current one has no remaining time[cite: 6]
+            if op.remaining == 0:
+                self.isPreemptible = True
+                self.current_op_index += 1
+
+        # Check and update termination state[cite: 6]
         if self.current_op_index >= len(self.operations):
             self.state = AgentState.TERMINATED
