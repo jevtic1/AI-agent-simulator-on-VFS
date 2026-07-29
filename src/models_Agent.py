@@ -25,7 +25,14 @@ class AgentState(Enum):
 
 
 class Agent:
-    def __init__(self, id: str, priority: int, arrival_time: int, operations: list):
+    def __init__(
+        self,
+        id: str,
+        priority: int,
+        arrival_time: int,
+        operations: list,
+        isPreemptible: bool = True,
+    ):
         if priority < 0:
             raise ValueError("Priority cannot be negative")
         if arrival_time < 0:
@@ -44,6 +51,7 @@ class Agent:
         self.blocked_time = 0
         self.preemption_count = 0
         self.handles = {}
+        self.isPreemptible = isPreemptible
 
     def nextOperation(self):
         if self.current_op_index >= len(self.operations):
