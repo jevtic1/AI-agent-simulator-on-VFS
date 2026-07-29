@@ -2,6 +2,9 @@ from abc import ABC, abstractmethod
 
 
 class Operation(ABC):
+    def __init__(self, remaining: int):
+        self.remaining = remaining
+
     @abstractmethod
     def execute(self, agent, vfs, lock_manager):
         pass
@@ -12,6 +15,7 @@ class ThinkOp(Operation):
         if not isinstance(duration, int) or duration <= 0:
             raise ValueError("Duration must be a positive integer.")
         self.duration = duration
+        super().__init__(duration)
 
     def execute(self, agent, vfs, lock_manager):
         # ThinkOp only simulates CPU computation time
@@ -25,6 +29,7 @@ class OpenOp(Operation):
         self.path = path
         self.mode = mode
         self.handle = handle
+        super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
         if lock_manager.acquire(agent, self.path, self.mode):
@@ -37,6 +42,7 @@ class ReadOp(Operation):
         if not handle:
             raise ValueError("Handle must be a non-empty string.")
         self.handle = handle
+        super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
         pass
@@ -48,6 +54,7 @@ class WriteOp(Operation):
             raise ValueError("Handle must be a non-empty string.")
         self.handle = handle
         self.data = data
+        super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
         pass
@@ -59,6 +66,7 @@ class AppendOp(Operation):
             raise ValueError("Handle must be a non-empty string.")
         self.handle = handle
         self.data = data
+        super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
         pass
@@ -69,6 +77,7 @@ class CloseOp(Operation):
         if not handle or handle == "invalid_handle":
             raise ValueError("Invalid handle.")
         self.handle = handle
+        super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
         lock_manager.release(agent, self.handle)
