@@ -1,6 +1,14 @@
 from abc import ABC, abstractmethod
 
 
+class DummyFileHandle:
+    """A lightweight representation of a FileHandle for OpenOp to instantiate unconditionally."""
+
+    def __init__(self, path: str, mode: str):
+        self.path = path
+        self.mode = mode
+
+
 class Operation(ABC):
     def __init__(self, remaining: int):
         self.remaining = remaining
@@ -18,8 +26,10 @@ class ThinkOp(Operation):
         super().__init__(duration)
 
     def execute(self, agent, vfs, lock_manager):
+        agent.isPreemptive = False
+
         # ThinkOp only simulates CPU computation time
-        pass
+        self.remaining -= 1
 
 
 class OpenOp(Operation):
@@ -32,9 +42,12 @@ class OpenOp(Operation):
         super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
-        if lock_manager.acquire(agent, self.path, self.mode):
-            return vfs.resolve(self.path)
-        return None
+        agent.isPreemptive = False
+
+        # OpenOp unconditionally creates a FileHandle for now
+        agent.handles[self.handle] = DummyFileHandle(self.path, self.mode)
+
+        self.remaining -= 1
 
 
 class ReadOp(Operation):
@@ -45,7 +58,18 @@ class ReadOp(Operation):
         super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
-        pass
+        agent.isPreemptive = False
+
+        if self.handle not in agent.handles:
+            raise KeyError(f"Handle '{self.handle}' not found.")
+
+        handle = agent.handles[self.handle]
+        vfile = vfs.resolve(handle.path)
+
+        # Read the content (just accessing it for now)
+        _ = vfile.content
+
+        self.remaining -= 1
 
 
 class WriteOp(Operation):
@@ -57,7 +81,24 @@ class WriteOp(Operation):
         super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
-        pass
+        agent.isPreemptive = False
+
+        if self.handle not in agent.handles:
+            raise KeyError(f"Handle '{self.handle}' not found.")
+
+        handle = agent.handles[self.handle]
+
+        if handle.mode == "r":
+            raise PermissionError("File handle is not opened for writing.")
+
+        vfile = vfs.resolve(handle.path)
+        if vfile.mount.mode == "ro":
+            raise PermissionError("Target mount is read-only.")
+
+        # Overwrite content entirely
+        vfile.content = self.data
+
+        self.remaining -= 1
 
 
 class AppendOp(Operation):
@@ -69,7 +110,24 @@ class AppendOp(Operation):
         super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
-        pass
+        agent.isPreemptive = False
+
+        if self.handle not in agent.handles:
+            raise KeyError(f"Handle '{self.handle}' not found.")
+
+        handle = agent.handles[self.handle]
+
+        if handle.mode == "r":
+            raise PermissionError("File handle is not opened for appending.")
+
+        vfile = vfs.resolve(handle.path)
+        if vfile.mount.mode == "ro":
+            raise PermissionError("Target mount is read-only.")
+
+        # Append data to the content
+        vfile.content += self.data
+
+        self.remaining -= 1
 
 
 class CloseOp(Operation):
@@ -80,4 +138,15 @@ class CloseOp(Operation):
         super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
-        lock_manager.release(agent, self.handle)
+        agent.isPreemptive = False
+
+        if self.handle not in agent.handles:
+            raise KeyError(f"Handle '{self.handle}' not found.")
+
+        handle = agent.handles[self.handle]
+        lock_manager.release(agent, handle.path)
+
+        # Remove the handle from the agent's table
+        del agent.handles[self.handle]
+
+        self.remaining -= 1
