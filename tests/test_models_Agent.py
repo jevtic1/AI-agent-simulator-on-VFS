@@ -272,3 +272,39 @@ class TestAgentStateAndStats:
         assert agent.wait_time == 1
         assert agent.blocked_time == 2
         assert agent.preemption_count == 1
+
+
+class TestAgentPreemptibleAttribute:
+    def test_initialization_default_preemptible(self, mock_operations):
+        agent = Agent(
+            id="A_default", priority=1, arrival_time=0, operations=mock_operations
+        )
+        assert agent.isPreemptible is True
+
+    def test_initialization_explicit_preemptible_true(self, mock_operations):
+        agent = Agent(
+            id="A_true",
+            priority=1,
+            arrival_time=0,
+            operations=mock_operations,
+            isPreemptible=True,
+        )
+        assert agent.isPreemptible is True
+
+    def test_initialization_explicit_preemptible_false(self, mock_operations):
+        agent = Agent(
+            id="A_false",
+            priority=1,
+            arrival_time=0,
+            operations=mock_operations,
+            isPreemptible=False,
+        )
+        assert agent.isPreemptible is False
+
+    def test_preemptible_attribute_modification(self, mock_operations):
+        agent = Agent(
+            id="A_modify", priority=1, arrival_time=0, operations=mock_operations
+        )
+        assert agent.isPreemptible is True
+        agent.isPreemptible = False
+        assert agent.isPreemptible is False
