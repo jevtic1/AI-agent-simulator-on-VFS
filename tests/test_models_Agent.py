@@ -178,7 +178,9 @@ class TestAgentStateValidation:
 @pytest.fixture
 def mock_operations():
     op1 = MagicMock(spec=Operation)
+    op1.remaining = 0
     op2 = MagicMock(spec=Operation)
+    op2.remaining = 0
     return [op1, op2]
 
 
@@ -225,21 +227,74 @@ class TestAgentNextOperation:
 
 
 class TestAgentAdvance:
-    def test_advance_increments_index(self, agent):
-        initial_index = agent.current_op_index
-        agent.advance()
-        assert agent.current_op_index == initial_index + 1
+    def test_advance_calls_execute_and_increments_if_zero_remaining(
+        self, agent, mock_operations
+    ):
+        op = mock_operations[0]
+        # Operation is complete
+        op.remaining = 0
+        # Initialize to False to ensure the method sets it to True
+        agent.isPreemptible = False
 
-    def test_advance_updates_state_when_finished(self, agent):
-        agent.advance()
-        agent.advance()
+        vfs_mock = MagicMock()
+        lock_manager_mock = MagicMock()
+
+        agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+
+        # Assert execute was triggered during advance
+        op.execute.assert_called_once_with(agent, vfs_mock, lock_manager_mock)
+
+        # Verify index progresses and isPreemptible flag is reset
+        assert agent.current_op_index == 1
+        assert agent.isPreemptible is True
+
+    def test_advance_calls_execute_does_not_increment_if_remaining_time(
+        self, agent, mock_operations
+    ):
+        op = mock_operations[0]
+        # Operation still has remaining time
+        op.remaining = 1
+        agent.isPreemptible = False
+
+        vfs_mock = MagicMock()
+        lock_manager_mock = MagicMock()
+
+        agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+
+        op.execute.assert_called_once_with(agent, vfs_mock, lock_manager_mock)
+
+        # Verify index and flag remain unaffected when not remaining == 0
+        assert agent.current_op_index == 0
+        assert agent.isPreemptible is False
+
+    def test_advance_updates_state_when_finished(self, agent, mock_operations):
+        vfs_mock = MagicMock()
+        lock_manager_mock = MagicMock()
+
+        # 0 remaining time means both will immediately resolve
+        agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+        agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+
         assert agent.state == AgentState.TERMINATED
 
-    def test_advance_does_not_increment_past_end(self, agent):
-        agent.advance()
-        agent.advance()
-        agent.advance()
+    def test_advance_does_not_execute_or_increment_past_end(
+        self, agent, mock_operations
+    ):
+        vfs_mock = MagicMock()
+        lock_manager_mock = MagicMock()
+
+        agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+        agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+
+        # Final call out of bounds
+        agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+
         assert agent.current_op_index == len(agent.operations)
+        assert agent.state == AgentState.TERMINATED
+
+        # Ensure it didn't crash and operations were only executed the intended amount of times
+        mock_operations[0].execute.assert_called_once()
+        mock_operations[1].execute.assert_called_once()
 
 
 class TestAgentHandles:
