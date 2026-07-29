@@ -1,6 +1,11 @@
 from enum import Enum
+from unittest.mock import MagicMock
+
 import pytest
-from src.models_AgentState import AgentState
+
+from src.models_Agent import Agent, AgentState
+from src.models_Operations import Operation
+from src.vfs_FileHandle import FileHandle
 
 ALL_STATES = [
     AgentState.NEW,
@@ -168,3 +173,102 @@ class TestAgentStateValidation:
             for to in ALL_STATES:
                 res = AgentState.is_valid_transition(frm, to)
                 assert isinstance(res, bool)
+
+
+@pytest.fixture
+def mock_operations():
+    op1 = MagicMock(spec=Operation)
+    op2 = MagicMock(spec=Operation)
+    return [op1, op2]
+
+
+@pytest.fixture
+def agent(mock_operations):
+    return Agent(id="A1", priority=1, arrival_time=0, operations=mock_operations)
+
+
+class TestAgentInitialization:
+    def test_initialization_defaults(self, agent, mock_operations):
+        assert agent.id == "A1"
+        assert agent.priority == 1
+        assert agent.arrival_time == 0
+        assert agent.operations == mock_operations
+
+        assert agent.current_op_index == 0
+        assert agent.state == AgentState.NEW
+        assert agent.start_time == 0
+        assert agent.end_time == 0
+        assert agent.wait_time == 0
+        assert agent.blocked_time == 0
+        assert agent.preemption_count == 0
+        assert isinstance(agent.handles, dict)
+        assert len(agent.handles) == 0
+
+    def test_initialization_invalid_priority(self, mock_operations):
+        with pytest.raises(ValueError):
+            Agent(id="A2", priority=-1, arrival_time=0, operations=mock_operations)
+
+    def test_initialization_invalid_arrival_time(self, mock_operations):
+        with pytest.raises(ValueError):
+            Agent(id="A3", priority=1, arrival_time=-5, operations=mock_operations)
+
+
+class TestAgentNextOperation:
+    def test_next_operation_returns_current(self, agent, mock_operations):
+        op = agent.nextOperation()
+        assert op is mock_operations[0]
+
+    def test_next_operation_out_of_bounds_returns_none(self, agent):
+        agent.current_op_index = len(agent.operations)
+        op = agent.nextOperation()
+        assert op is None
+
+
+class TestAgentAdvance:
+    def test_advance_increments_index(self, agent):
+        initial_index = agent.current_op_index
+        agent.advance()
+        assert agent.current_op_index == initial_index + 1
+
+    def test_advance_updates_state_when_finished(self, agent):
+        agent.advance()
+        agent.advance()
+        assert agent.state == AgentState.TERMINATED
+
+    def test_advance_does_not_increment_past_end(self, agent):
+        agent.advance()
+        agent.advance()
+        agent.advance()
+        assert agent.current_op_index == len(agent.operations)
+
+
+class TestAgentHandles:
+    def test_add_handle(self, agent):
+        mock_handle = MagicMock(spec=FileHandle)
+        agent.handles["h1"] = mock_handle
+        assert "h1" in agent.handles
+        assert agent.handles["h1"] is mock_handle
+
+    def test_remove_handle(self, agent):
+        mock_handle = MagicMock(spec=FileHandle)
+        agent.handles["h1"] = mock_handle
+        del agent.handles["h1"]
+        assert "h1" not in agent.handles
+
+
+class TestAgentStateAndStats:
+    def test_state_transitions(self, agent):
+        agent.state = AgentState.READY
+        assert agent.state == AgentState.READY
+
+        agent.state = AgentState.RUNNING
+        assert agent.state == AgentState.RUNNING
+
+    def test_statistics_increments(self, agent):
+        agent.wait_time += 1
+        agent.blocked_time += 2
+        agent.preemption_count += 1
+
+        assert agent.wait_time == 1
+        assert agent.blocked_time == 2
+        assert agent.preemption_count == 1
