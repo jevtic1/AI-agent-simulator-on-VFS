@@ -1,12 +1,6 @@
 from abc import ABC, abstractmethod
 
-
-class DummyFileHandle:
-    """A lightweight representation of a FileHandle for OpenOp to instantiate unconditionally."""
-
-    def __init__(self, path: str, mode: str):
-        self.path = path
-        self.mode = mode
+from vfs_FileHandle import FileHandle
 
 
 class Operation(ABC):
@@ -26,127 +20,142 @@ class ThinkOp(Operation):
         super().__init__(duration)
 
     def execute(self, agent, vfs, lock_manager):
-        agent.isPreemptive = False
-
-        # ThinkOp only simulates CPU computation time
+        agent.isPreemptible = False
         self.remaining -= 1
 
 
 class OpenOp(Operation):
     def __init__(self, path: str, mode: str, handle: str):
-        if not path or not mode or not handle:
-            raise ValueError("Path, mode, and handle must be non-empty strings.")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("Path must be a non-empty string.")
+        if not isinstance(mode, str) or not mode.strip():
+            raise ValueError("Mode must be a non-empty string.")
+        if not isinstance(handle, str) or not handle.strip():
+            raise ValueError("Handle must be a non-empty string.")
+
         self.path = path
         self.mode = mode
         self.handle = handle
         super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
-        agent.isPreemptive = False
+        agent.isPreemptible = False
 
-        # OpenOp unconditionally creates a FileHandle for now
-        agent.handles[self.handle] = DummyFileHandle(self.path, self.mode)
+        # Map lock mode to concrete file handle mode ("ro" vs "rw")
+        fh_mode = "ro" if self.mode == "read" else "rw"
 
-        self.remaining -= 1
+        # Attempt to acquire the lock via LockManager
+        acquired = lock_manager.acquire(agent, self.path, self.mode)
+
+        if acquired:
+            # Successfully acquired lock: store FileHandle and complete op
+            agent.handles[self.handle] = FileHandle(
+                id=self.handle,
+                path=self.path,
+                mode=fh_mode,
+                agentId=agent.id,
+            )
+            self.remaining -= 1
+        # If lock acquisition fails, agent state set to BLOCKED inside LockManager.
+        # remaining is NOT decremented so it can be retried when awakened.
 
 
 class ReadOp(Operation):
     def __init__(self, handle: str):
-        if not handle:
+        if not isinstance(handle, str) or not handle.strip():
             raise ValueError("Handle must be a non-empty string.")
         self.handle = handle
         super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
-        agent.isPreemptive = False
+        agent.isPreemptible = False
 
         if self.handle not in agent.handles:
             raise KeyError(f"Handle '{self.handle}' not found.")
 
         handle = agent.handles[self.handle]
         vfile = vfs.resolve(handle.path)
-
-        # Read the content (just accessing it for now)
-        _ = vfile.content
+        _ = vfile.read()
 
         self.remaining -= 1
 
 
 class WriteOp(Operation):
     def __init__(self, handle: str, data: str):
-        if not handle:
+        if not isinstance(handle, str) or not handle.strip():
             raise ValueError("Handle must be a non-empty string.")
+        if not isinstance(data, str):
+            raise TypeError("Data must be a string.")
         self.handle = handle
         self.data = data
         super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
-        agent.isPreemptive = False
+        agent.isPreemptible = False
 
         if self.handle not in agent.handles:
             raise KeyError(f"Handle '{self.handle}' not found.")
 
         handle = agent.handles[self.handle]
 
-        if handle.mode == "r":
-            raise PermissionError("File handle is not opened for writing.")
+        if handle.mode == "ro":
+            raise PermissionError("Handle is read-only.")
 
         vfile = vfs.resolve(handle.path)
-        if vfile.mount.mode == "ro":
-            raise PermissionError("Target mount is read-only.")
-
-        # Overwrite content entirely
-        vfile.content = self.data
+        vfile.write(self.data)  # VFile will raise PermissionError if vfile.mode is "ro"
 
         self.remaining -= 1
 
 
 class AppendOp(Operation):
     def __init__(self, handle: str, data: str):
-        if not handle:
+        if not isinstance(handle, str) or not handle.strip():
             raise ValueError("Handle must be a non-empty string.")
+        if not isinstance(data, str):
+            raise TypeError("Data must be a string.")
         self.handle = handle
         self.data = data
         super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
-        agent.isPreemptive = False
+        agent.isPreemptible = False
 
         if self.handle not in agent.handles:
             raise KeyError(f"Handle '{self.handle}' not found.")
 
         handle = agent.handles[self.handle]
 
-        if handle.mode == "r":
-            raise PermissionError("File handle is not opened for appending.")
+        if handle.mode == "ro":
+            raise PermissionError("Handle is read-only.")
 
         vfile = vfs.resolve(handle.path)
-        if vfile.mount.mode == "ro":
-            raise PermissionError("Target mount is read-only.")
-
-        # Append data to the content
-        vfile.content += self.data
+        vfile.append(
+            self.data
+        )  # VFile will raise PermissionError if vfile.mode is "ro"
 
         self.remaining -= 1
 
 
 class CloseOp(Operation):
     def __init__(self, handle: str):
-        if not handle or handle == "invalid_handle":
+        if (
+            not isinstance(handle, str)
+            or not handle.strip()
+            or handle == "invalid_handle"
+        ):
             raise ValueError("Invalid handle.")
         self.handle = handle
         super().__init__(1)
 
     def execute(self, agent, vfs, lock_manager):
-        agent.isPreemptive = False
+        agent.isPreemptible = False
 
         if self.handle not in agent.handles:
+            self.remaining -= 1
             raise KeyError(f"Handle '{self.handle}' not found.")
 
         handle = agent.handles[self.handle]
         lock_manager.release(agent, handle.path)
-
-        # Remove the handle from the agent's table
         del agent.handles[self.handle]
 
         self.remaining -= 1
