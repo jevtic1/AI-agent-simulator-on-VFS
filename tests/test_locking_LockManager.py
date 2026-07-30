@@ -2,6 +2,7 @@ import pytest
 
 from locking_Lock import Lock
 from locking_LockManager import LockManager
+from locking_WaitForGraph import WaitForGraph
 from models_Agent import Agent, AgentState
 
 
@@ -27,13 +28,12 @@ def empty_lock_manager():
 
 class TestLockManagerInitialization:
     def test_initialization(self, empty_lock_manager):
-        """Standard Case: LockManager initializes with an empty lock tracking structure."""
+        """Standard Case: LockManager initializes with an empty lock tracking structure and a wait-for graph."""
         assert hasattr(empty_lock_manager, "locks")
         assert len(empty_lock_manager.locks) == 0
-
-    def test_no_wait_for_graph(self, empty_lock_manager):
-        """Constraint: LockManager must NOT have a waitForGraph attribute for now."""
-        assert not hasattr(empty_lock_manager, "waitForGraph")
+        # LockManager must now have a waitForGraph attribute
+        assert hasattr(empty_lock_manager, "waitForGraph")
+        assert isinstance(empty_lock_manager.waitForGraph, WaitForGraph)
 
 
 class TestLockManagerAcquire:
@@ -59,6 +59,7 @@ class TestLockManagerAcquire:
         assert agent in lock.holders
         assert len(lock.waiters) == 0
         assert agent.state == AgentState.RUNNING
+        assert len(empty_lock_manager.waitForGraph.edges) == 0
 
     def test_acquire_existing_shared_lock_with_read(self, empty_lock_manager):
         """Standard Case: Read requests on an existing shared lock are granted immediately."""
@@ -78,34 +79,48 @@ class TestLockManagerAcquire:
         assert agent1 in lock.holders
         assert agent2 in lock.holders
         assert len(lock.waiters) == 0
+        assert len(empty_lock_manager.waitForGraph.edges) == 0
 
     @pytest.mark.parametrize("mode", ["write", "append"])
     def test_acquire_existing_shared_lock_with_write_blocks(
         self, empty_lock_manager, mode
     ):
-        """Standard Case: Write/append requests on a shared lock fail, block the agent, and queue it."""
+        """Standard Case: Write/append requests on a shared lock fail, block the agent, queue it, and add graph edges."""
         agent1 = create_test_agent("A1")
         agent2 = create_test_agent("A2")
+        agent3 = create_test_agent("A3")
         path = "/data/file1"
 
         empty_lock_manager.acquire(agent1, path, "read")
+        empty_lock_manager.acquire(agent2, path, "read")
 
-        result = empty_lock_manager.acquire(agent2, path, mode)
+        # Agent 3 requests write, must block on both A1 and A2
+        result = empty_lock_manager.acquire(agent3, path, mode)
 
         assert result is False
         lock = empty_lock_manager.locks[path]
 
-        # Agent 1 still holds it
+        # Agent 1 and 2 still hold it
         assert agent1 in lock.holders
-        assert agent2 not in lock.holders
+        assert agent2 in lock.holders
+        assert agent3 not in lock.holders
 
-        # Agent 2 is in waiters and blocked
-        assert agent2 in lock.waiters
-        assert agent2.state == AgentState.BLOCKED
+        # Agent 3 is in waiters and blocked
+        assert agent3 in lock.waiters
+        assert agent3.state == AgentState.BLOCKED
+
+        # Validate wait-for graph edges exist for A3 -> A1 and A3 -> A2
+        edges = empty_lock_manager.waitForGraph.edges
+        assert any(
+            e.frm == agent3.id and e.to == agent1.id and e.path == path for e in edges
+        )
+        assert any(
+            e.frm == agent3.id and e.to == agent2.id and e.path == path for e in edges
+        )
 
     @pytest.mark.parametrize("mode", ["read", "write", "append"])
     def test_acquire_existing_exclusive_lock_blocks_all(self, empty_lock_manager, mode):
-        """Standard Case: Any request on an exclusive lock fails, blocks the agent, and queues it."""
+        """Standard Case: Any request on an exclusive lock fails, blocks the agent, queues it, and adds a graph edge."""
         agent1 = create_test_agent("A1")
         agent2 = create_test_agent("A2")
         path = "/data/file1"
@@ -122,11 +137,49 @@ class TestLockManagerAcquire:
         assert agent2 in lock.waiters
         assert agent2.state == AgentState.BLOCKED
 
+        # Validate wait-for graph edge
+        edges = empty_lock_manager.waitForGraph.edges
+        assert any(
+            e.frm == agent2.id and e.to == agent1.id and e.path == path for e in edges
+        )
+
     def test_acquire_invalid_mode_raises_error(self, empty_lock_manager):
         """Edge Case: Acquiring with an invalid mode should raise a ValueError."""
         agent = create_test_agent("A1")
         with pytest.raises(ValueError):
             empty_lock_manager.acquire(agent, "/data/file1", "delete")
+
+    def test_acquire_deadlock_detected(self, empty_lock_manager):
+        """Edge Case: Acquiring a lock that forms a wait cycle must be rejected completely without blocking."""
+        agent1 = create_test_agent("A1")
+        agent2 = create_test_agent("A2")
+        path1 = "/data/file1"
+        path2 = "/data/file2"
+
+        # Setup: A1 holds path1, A2 holds path2
+        empty_lock_manager.acquire(agent1, path1, "write")
+        empty_lock_manager.acquire(agent2, path2, "write")
+
+        # A1 requests path2 -> Blocks, edge A1 -> A2 added
+        result1 = empty_lock_manager.acquire(agent1, path2, "read")
+        assert result1 is False
+        assert agent1.state == AgentState.BLOCKED
+
+        # A2 requests path1 -> Will cause cycle (A2 waits on A1, A1 waits on A2)
+        result2 = empty_lock_manager.acquire(agent2, path1, "read")
+
+        # Deadlock handling expectations:
+        assert result2 is False
+        # Agent state must remain untouched
+        assert agent2.state == AgentState.RUNNING
+        # Agent must not be added to waiters
+        lock1 = empty_lock_manager.locks[path1]
+        assert agent2 not in lock1.waiters
+        # The speculative graph edge must be rolled back
+        edges = empty_lock_manager.waitForGraph.edges
+        assert not any(
+            e.frm == agent2.id and e.to == agent1.id and e.path == path1 for e in edges
+        )
 
 
 class TestLockManagerRelease:
@@ -158,10 +211,10 @@ class TestLockManagerRelease:
         # Lock should still exist in the dictionary
         assert path in empty_lock_manager.locks
 
-    def test_release_last_holder_wakes_waiters_and_deletes_lock(
+    def test_release_last_holder_wakes_waiters_and_deletes_lock_and_edges(
         self, empty_lock_manager
     ):
-        """Standard Case: Releasing the last holder wakes waiters and completely deletes the lock."""
+        """Standard Case: Releasing the last holder wakes waiters, deletes lock, and purges wait-edges."""
         agent1 = create_test_agent("A1")
         agent2 = create_test_agent("A2")
         agent3 = create_test_agent("A3")
@@ -171,6 +224,11 @@ class TestLockManagerRelease:
         empty_lock_manager.acquire(agent1, path, "write")
         empty_lock_manager.acquire(agent2, path, "read")
         empty_lock_manager.acquire(agent3, path, "write")
+
+        # Verify edges exist before release
+        edges_before = empty_lock_manager.waitForGraph.edges
+        assert any(e.frm == agent2.id and e.path == path for e in edges_before)
+        assert any(e.frm == agent3.id and e.path == path for e in edges_before)
 
         # Action: A1 releases (the only holder)
         empty_lock_manager.release(agent1, path)
@@ -182,6 +240,11 @@ class TestLockManagerRelease:
 
         # 2. The lock must be deleted from the manager
         assert path not in empty_lock_manager.locks
+
+        # 3. Waiter edges for this path must be purged from the graph
+        edges_after = empty_lock_manager.waitForGraph.edges
+        assert not any(e.frm == agent2.id and e.path == path for e in edges_after)
+        assert not any(e.frm == agent3.id and e.path == path for e in edges_after)
 
     def test_release_non_existent_lock(self, empty_lock_manager):
         """Edge Case: Releasing a lock that does not exist should be handled gracefully."""
