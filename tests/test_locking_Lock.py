@@ -1,4 +1,5 @@
 import pytest
+import dataclasses
 from locking_Lock import Lock
 
 
@@ -31,6 +32,22 @@ class TestLockInitialization:
             Lock(path=invalid_path, type="shared")
 
 
+class TestLockImmutability:
+    def test_lock_path_is_immutable(self):
+        """Constraint: Lock path must be immutable after initialization."""
+        lock = Lock(path="/file.txt", type="shared")
+
+        with pytest.raises((AttributeError, dataclasses.FrozenInstanceError)):
+            lock.path = "/new_path.txt"
+
+    def test_lock_type_is_immutable(self):
+        """Constraint: Lock type must be immutable after initialization."""
+        lock = Lock(path="/file.txt", type="shared")
+
+        with pytest.raises((AttributeError, dataclasses.FrozenInstanceError)):
+            lock.type = "exclusive"
+
+
 class TestLockPropertiesMutation:
     def test_holders_list_mutation(self):
         """Standard Case: The holders array can accept and store string IDs."""
@@ -53,18 +70,3 @@ class TestLockPropertiesMutation:
         lock.waiters.append("agent_3")
         assert len(lock.waiters) == 1
         assert lock.waiters == ["agent_3"]
-
-    def test_type_modification_valid(self):
-        """Standard Case: Modifying the type post-initialization to a valid state should succeed."""
-        lock = Lock(path="/file.txt", type="shared")
-        lock.type = "exclusive"
-
-        assert lock.type == "exclusive"
-
-    @pytest.mark.parametrize("invalid_type", ["unknown", "", None, 1])
-    def test_type_modification_invalid_raises_error(self, invalid_type):
-        """Edge Case: Setting the type post-initialization to an invalid state must raise an error."""
-        lock = Lock(path="/file.txt", type="shared")
-
-        with pytest.raises(ValueError):
-            lock.type = invalid_type
