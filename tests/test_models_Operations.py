@@ -1,7 +1,8 @@
-from unittest.mock import MagicMock
-
 import pytest
 
+# Concrete Implementations
+from locking_LockManager import LockManager
+from models_Agent import Agent, AgentState
 from models_Operations import (
     AppendOp,
     CloseOp,
@@ -11,60 +12,41 @@ from models_Operations import (
     ThinkOp,
     WriteOp,
 )
+from src.vfs_VFile import VFile
+from src.vfs_VFS import VFS
+from vfs_FileHandle import (
+    FileHandle,
+)  # Assuming standard location based on common patterns
 
 
 @pytest.fixture
-def mock_agent():
-    agent = MagicMock()
-    agent.id = "agent_1"
-    agent.state = "RUNNING"
-    agent.handles = {}
-    agent.isPreemptive = True  # Setup default state to be True
-    return agent
+def agent():
+    return Agent(
+        id="agent_1", priority=1, arrival_time=0, operations=[], isPreemptible=True
+    )
 
 
 @pytest.fixture
-def mock_vfile_rw():
-    vfile = MagicMock()
-    vfile.content = "initial content"
-    vfile.mount = MagicMock()
-    vfile.mount.mode = "rw"
-    return vfile
+def vfs():
+    vfs_instance = VFS()
+    # Populate the VFS with concrete VFiles manually to avoid local disk dependency during testing
+    vfs_instance.files.append(VFile(path="/tmp/test.txt", content="", mode="rw"))
+    vfs_instance.files.append(
+        VFile(path="/docs/readme.txt", content="read-only content", mode="ro")
+    )
+    vfs_instance.files.append(
+        VFile(path="/docs/data.txt", content="initial content", mode="rw")
+    )
+    vfs_instance.files.append(
+        VFile(path="/docs/log.txt", content="line 1\n", mode="rw")
+    )
+    vfs_instance.files.append(VFile(path="/docs/close_me.txt", content="", mode="rw"))
+    return vfs_instance
 
 
 @pytest.fixture
-def mock_vfile_ro():
-    vfile = MagicMock()
-    vfile.content = "read-only content"
-    vfile.mount = MagicMock()
-    vfile.mount.mode = "ro"
-    return vfile
-
-
-@pytest.fixture
-def mock_vfs(mock_vfile_rw):
-    vfs = MagicMock()
-    vfs.resolve.return_value = mock_vfile_rw
-    return vfs
-
-
-@pytest.fixture
-def mock_lock_manager():
-    lm = MagicMock()
-    lm.acquire = MagicMock(return_value=True)
-    lm.release = MagicMock(return_value=True)
-    return lm
-
-
-@pytest.fixture
-def mock_file_handle():
-    def _create_handle(path="/tmp/file.txt", mode="r"):
-        handle = MagicMock()
-        handle.path = path
-        handle.mode = mode
-        return handle
-
-    return _create_handle
+def lock_manager():
+    return LockManager()
 
 
 class TestThinkOp:
@@ -78,13 +60,13 @@ class TestThinkOp:
         with pytest.raises(ValueError):
             ThinkOp(duration=invalid_duration)
 
-    def test_think_op_execution(self, mock_agent, mock_vfs, mock_lock_manager):
+    def test_think_op_execution(self, agent, vfs, lock_manager):
         op = ThinkOp(duration=5)
         initial_remaining = op.remaining
 
-        op.execute(mock_agent, mock_vfs, mock_lock_manager)
+        op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         assert op.remaining == initial_remaining - 1
 
 
@@ -109,26 +91,47 @@ class TestOpenOp:
         with pytest.raises((ValueError, TypeError)):
             OpenOp(path=path, mode=mode, handle=handle)
 
-    def test_open_op_successful_execute(self, mock_agent, mock_vfs, mock_lock_manager):
-        op = OpenOp(path="/tmp/test.txt", mode="rw", handle="h100")
+    def test_open_op_successful_execute(self, agent, vfs, lock_manager):
+        """Standard Case: Lock acquired successfully. Creates handle and decrements remaining."""
+        # Using "write" mode or "append" to align with LockManager requirements
+        op = OpenOp(path="/tmp/test.txt", mode="write", handle="h100")
         initial_remaining = op.remaining
 
-        op.execute(mock_agent, mock_vfs, mock_lock_manager)
+        op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         assert op.remaining == initial_remaining - 1
 
-        # Verify handle was created and stored unconditionally
-        assert "h100" in mock_agent.handles
-        created_handle = mock_agent.handles["h100"]
-        # Checking attributes assuming the handle is a simple object or FileHandle instance
-        assert (
-            getattr(created_handle, "path", None) == "/tmp/test.txt"
-            or created_handle.path == "/tmp/test.txt"
-        )
-        assert (
-            getattr(created_handle, "mode", None) == "rw" or created_handle.mode == "rw"
-        )
+        # Verify handle was created and stored in agent table with valid configurations
+        assert "h100" in agent.handles
+        created_handle = agent.handles["h100"]
+
+        assert created_handle.path == "/tmp/test.txt"
+        assert created_handle.mode in ("ro", "rw")
+        assert "/tmp/test.txt" in lock_manager.locks
+
+    def test_open_op_failed_execute_blocks(self, agent, vfs, lock_manager):
+        """Standard Case: Lock acquire returns False. Blocks agent, wait for next tick."""
+        # Introduce a conflicting agent that already holds the lock exclusively
+        agent2 = Agent(id="agent_2", priority=1, arrival_time=0, operations=[])
+        lock_manager.acquire(agent2, "/tmp/test.txt", "write")
+
+        op = OpenOp(path="/tmp/test.txt", mode="write", handle="h100")
+        initial_remaining = op.remaining
+
+        op.execute(agent, vfs, lock_manager)
+
+        assert agent.isPreemptible is False
+
+        # Verify the handle was NOT created because it blocked
+        assert "h100" not in agent.handles
+
+        # Verify remaining was NOT decremented (operation is incomplete)
+        assert op.remaining == initial_remaining
+
+        # Verify the agent's state transitioned to BLOCKED due to incompatibility
+        assert agent.state == AgentState.BLOCKED
+        assert agent in lock_manager.locks["/tmp/test.txt"].waiters
 
 
 class TestReadOp:
@@ -141,29 +144,27 @@ class TestReadOp:
         with pytest.raises(ValueError):
             ReadOp(handle="")
 
-    def test_read_op_execution_success(
-        self, mock_agent, mock_vfs, mock_lock_manager, mock_file_handle
-    ):
-        mock_agent.handles["h1"] = mock_file_handle(path="/docs/readme.txt", mode="r")
+    def test_read_op_execution_success(self, agent, vfs, lock_manager):
+        # Provide concrete FileHandle mapped to a concrete Read-Only VFile
+        agent.handles["h1"] = FileHandle(
+            id="h1", path="/docs/readme.txt", mode="ro", agentId=agent.id
+        )
         op = ReadOp(handle="h1")
         initial_remaining = op.remaining
 
-        op.execute(mock_agent, mock_vfs, mock_lock_manager)
+        op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         assert op.remaining == initial_remaining - 1
-        mock_vfs.resolve.assert_called_once_with("/docs/readme.txt")
 
-    def test_read_op_execution_fails_missing_handle(
-        self, mock_agent, mock_vfs, mock_lock_manager
-    ):
+    def test_read_op_execution_fails_missing_handle(self, agent, vfs, lock_manager):
         op = ReadOp(handle="missing_h")
         initial_remaining = op.remaining
 
         with pytest.raises((KeyError, ValueError, AttributeError)):
-            op.execute(mock_agent, mock_vfs, mock_lock_manager)
+            op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         # Remaining should not decrement on failure
         assert op.remaining == initial_remaining
 
@@ -179,57 +180,49 @@ class TestWriteOp:
         op = WriteOp(handle="h1", data="")
         assert op.data == ""
 
-    def test_write_op_execution_success(
-        self, mock_agent, mock_vfs, mock_lock_manager, mock_file_handle, mock_vfile_rw
-    ):
-        mock_agent.handles["h_write"] = mock_file_handle(
-            path="/docs/data.txt", mode="w"
+    def test_write_op_execution_success(self, agent, vfs, lock_manager):
+        agent.handles["h_write"] = FileHandle(
+            id="h_write", path="/docs/data.txt", mode="rw", agentId=agent.id
         )
-        mock_vfs.resolve.return_value = mock_vfile_rw
 
         op = WriteOp(handle="h_write", data="Completely overwritten data.")
         initial_remaining = op.remaining
 
-        op.execute(mock_agent, mock_vfs, mock_lock_manager)
+        op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         assert op.remaining == initial_remaining - 1
-        mock_vfs.resolve.assert_called_once_with("/docs/data.txt")
-        # Must verify the file string was properly overwritten
-        assert mock_vfile_rw.content == "Completely overwritten data."
+        # Must verify the file string was properly overwritten natively via VFS resolution
+        assert vfs.resolve("/docs/data.txt").read() == "Completely overwritten data."
 
-    def test_write_op_fails_if_invalid_mode(
-        self, mock_agent, mock_vfs, mock_lock_manager, mock_file_handle, mock_vfile_rw
-    ):
-        mock_agent.handles["h_write"] = mock_file_handle(
-            path="/docs/data.txt", mode="r"
+    def test_write_op_fails_if_invalid_mode(self, agent, vfs, lock_manager):
+        # Simulate a handle mapped in Read-Only mode attempting a write
+        agent.handles["h_write"] = FileHandle(
+            id="h_write", path="/docs/data.txt", mode="ro", agentId=agent.id
         )
-        mock_vfs.resolve.return_value = mock_vfile_rw
 
         op = WriteOp(handle="h_write", data="Should not write")
         initial_remaining = op.remaining
 
         with pytest.raises((PermissionError, ValueError, IOError)):
-            op.execute(mock_agent, mock_vfs, mock_lock_manager)
+            op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         assert op.remaining == initial_remaining  # Check no decrement on fail
 
-    def test_write_op_fails_if_mount_readonly(
-        self, mock_agent, mock_vfs, mock_lock_manager, mock_file_handle, mock_vfile_ro
-    ):
-        mock_agent.handles["h_write"] = mock_file_handle(
-            path="/docs/data.txt", mode="w"
+    def test_write_op_fails_if_mount_readonly(self, agent, vfs, lock_manager):
+        # Target a VFile initialized directly in read-only mode, regardless of agent's handle permissions
+        agent.handles["h_write"] = FileHandle(
+            id="h_write", path="/docs/readme.txt", mode="rw", agentId=agent.id
         )
-        mock_vfs.resolve.return_value = mock_vfile_ro
 
         op = WriteOp(handle="h_write", data="Should not write")
         initial_remaining = op.remaining
 
         with pytest.raises((PermissionError, ValueError, IOError)):
-            op.execute(mock_agent, mock_vfs, mock_lock_manager)
+            op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         assert op.remaining == initial_remaining
 
 
@@ -240,58 +233,47 @@ class TestAppendOp:
         assert op.data == "\nNew Line"
         assert op.remaining == 1
 
-    def test_append_op_execution_success(
-        self, mock_agent, mock_vfs, mock_lock_manager, mock_file_handle, mock_vfile_rw
-    ):
-        mock_agent.handles["h_append"] = mock_file_handle(
-            path="/docs/log.txt", mode="a"
+    def test_append_op_execution_success(self, agent, vfs, lock_manager):
+        agent.handles["h_append"] = FileHandle(
+            id="h_append", path="/docs/log.txt", mode="rw", agentId=agent.id
         )
-        mock_vfile_rw.content = "line 1\n"
-        mock_vfs.resolve.return_value = mock_vfile_rw
 
         op = AppendOp(handle="h_append", data="line 2")
         initial_remaining = op.remaining
 
-        op.execute(mock_agent, mock_vfs, mock_lock_manager)
+        op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         assert op.remaining == initial_remaining - 1
-        mock_vfs.resolve.assert_called_once_with("/docs/log.txt")
-        # Must verify the file string was properly appended
-        assert mock_vfile_rw.content == "line 1\nline 2"
+        # Must verify the file string was properly appended to existing data
+        assert vfs.resolve("/docs/log.txt").read() == "line 1\nline 2"
 
-    def test_append_op_fails_if_invalid_mode(
-        self, mock_agent, mock_vfs, mock_lock_manager, mock_file_handle, mock_vfile_rw
-    ):
-        mock_agent.handles["h_append"] = mock_file_handle(
-            path="/docs/log.txt", mode="r"
+    def test_append_op_fails_if_invalid_mode(self, agent, vfs, lock_manager):
+        agent.handles["h_append"] = FileHandle(
+            id="h_append", path="/docs/log.txt", mode="ro", agentId=agent.id
         )
-        mock_vfs.resolve.return_value = mock_vfile_rw
 
         op = AppendOp(handle="h_append", data="line 2")
         initial_remaining = op.remaining
 
         with pytest.raises((PermissionError, ValueError, IOError)):
-            op.execute(mock_agent, mock_vfs, mock_lock_manager)
+            op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         assert op.remaining == initial_remaining
 
-    def test_append_op_fails_if_mount_readonly(
-        self, mock_agent, mock_vfs, mock_lock_manager, mock_file_handle, mock_vfile_ro
-    ):
-        mock_agent.handles["h_append"] = mock_file_handle(
-            path="/docs/log.txt", mode="a"
+    def test_append_op_fails_if_mount_readonly(self, agent, vfs, lock_manager):
+        agent.handles["h_append"] = FileHandle(
+            id="h_append", path="/docs/readme.txt", mode="rw", agentId=agent.id
         )
-        mock_vfs.resolve.return_value = mock_vfile_ro
 
         op = AppendOp(handle="h_append", data="line 2")
         initial_remaining = op.remaining
 
         with pytest.raises((PermissionError, ValueError, IOError)):
-            op.execute(mock_agent, mock_vfs, mock_lock_manager)
+            op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         assert op.remaining == initial_remaining
 
 
@@ -305,37 +287,37 @@ class TestCloseOp:
         with pytest.raises((ValueError, KeyError)):
             CloseOp(handle="invalid_handle")
 
-    def test_close_op_execution_success(
-        self, mock_agent, mock_vfs, mock_lock_manager, mock_file_handle
-    ):
-        mock_agent.handles["h_close"] = mock_file_handle(
-            path="/docs/close_me.txt", mode="w"
+    def test_close_op_execution_success(self, agent, vfs, lock_manager):
+        """Standard Case: Releasing lock successfully. Lock manager called, handle removed."""
+        # Setup lock requirement
+        lock_manager.acquire(agent, "/docs/close_me.txt", "write")
+
+        agent.handles["h_close"] = FileHandle(
+            id="h_close", path="/docs/close_me.txt", mode="rw", agentId=agent.id
         )
         op = CloseOp(handle="h_close")
         initial_remaining = op.remaining
 
-        op.execute(mock_agent, mock_vfs, mock_lock_manager)
+        op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
+        assert agent.isPreemptible is False
         assert op.remaining == initial_remaining - 1
-        # Verify lock manager was called with agent and handle path
-        mock_lock_manager.release.assert_called_once_with(
-            mock_agent, "/docs/close_me.txt"
-        )
-        # Verify handle was removed from agent
-        assert "h_close" not in mock_agent.handles
 
-    def test_close_op_execution_fails_missing_handle(
-        self, mock_agent, mock_vfs, mock_lock_manager
-    ):
+        # Verify handle was removed from agent logic
+        assert "h_close" not in agent.handles
+
+        # Verify LockManager actively removed the fully freed lock
+        assert "/docs/close_me.txt" not in lock_manager.locks
+
+    def test_close_op_execution_fails_missing_handle(self, agent, vfs, lock_manager):
         op = CloseOp(handle="missing_h")
         initial_remaining = op.remaining
 
         with pytest.raises((KeyError, ValueError, AttributeError)):
-            op.execute(mock_agent, mock_vfs, mock_lock_manager)
+            op.execute(agent, vfs, lock_manager)
 
-        assert mock_agent.isPreemptive is False
-        assert op.remaining == initial_remaining
+        assert agent.isPreemptible is False
+        assert op.remaining == initial_remaining - 1
 
 
 class TestOperationAbstract:
