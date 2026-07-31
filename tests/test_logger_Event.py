@@ -9,7 +9,7 @@ TYPE = EventType.AGENT_ARRIVED
 TIME = 100
 AGENT_ID = "agent_42"
 DETAIL = "Executed successfully."
-RELATED_AGENT = "agent_99"
+RELATED_AGENTS = ["agent_99", "agent_100"]
 PATH = "/mnt/data/file.txt"
 
 VALIDATION_ERRORS = (ValueError, TypeError)
@@ -18,7 +18,7 @@ VALIDATION_ERRORS = (ValueError, TypeError)
 class TestEventTypeEnum:
     def test_enum_structure(self):
         assert issubclass(EventType, Enum)
-        assert len(list(EventType)) == 10
+        assert len(list(EventType)) == 21
 
     @pytest.mark.parametrize(
         "member_name",
@@ -27,10 +27,21 @@ class TestEventTypeEnum:
             "SLOT_ASSIGNED",
             "SLOT_FREED",
             "PREEMPTED",
+            "THINKING",
+            "THINK_DONE",
             "OPEN_GRANTED",
             "OPEN_BLOCKED",
             "OPEN_REJECTED",
-            "LOCK_RELEASED",
+            "OPEN_ERROR",
+            "READ_DONE",
+            "READ_ERROR",
+            "WRITE_DONE",
+            "WRITE_ERROR",
+            "APPEND_DONE",
+            "APPEND_ERROR",
+            "CLOSE_DONE",
+            "CLOSE_ERROR",
+            "UNKNOWN_ERROR",
             "OPERATION_DONE",
             "AGENT_TERMINATED",
         ],
@@ -50,31 +61,32 @@ class TestEventConstruction:
             type=TYPE,
             agent_id=AGENT_ID,
             detail=DETAIL,
-            related_agent_id=RELATED_AGENT,
+            related_agent_ids=RELATED_AGENTS,
             path=PATH,
         )
         assert event.time == TIME
         assert event.type == TYPE
         assert event.agent_id == AGENT_ID
         assert event.detail == DETAIL
-        assert event.related_agent_id == RELATED_AGENT
+        assert event.related_agent_ids == RELATED_AGENTS
         assert event.path == PATH
 
     def test_valid_instantiation_defaults(self):
         event = Event(time=TIME, type=TYPE, agent_id=AGENT_ID, detail=DETAIL)
-        assert event.related_agent_id is None
+        # Allows for the default to be an empty list or None depending on the implementation
+        assert not event.related_agent_ids
         assert event.path is None
 
     def test_positional_arguments(self):
-        event = Event(TIME, TYPE, AGENT_ID, DETAIL, RELATED_AGENT, PATH)
+        event = Event(TIME, TYPE, AGENT_ID, DETAIL, RELATED_AGENTS, PATH)
         assert (
             event.time,
             event.type,
             event.agent_id,
             event.detail,
-            event.related_agent_id,
+            event.related_agent_ids,
             event.path,
-        ) == (TIME, TYPE, AGENT_ID, DETAIL, RELATED_AGENT, PATH)
+        ) == (TIME, TYPE, AGENT_ID, DETAIL, RELATED_AGENTS, PATH)
 
 
 class TestEventValidation:
@@ -98,15 +110,22 @@ class TestEventValidation:
         with pytest.raises(VALIDATION_ERRORS):
             Event(time=TIME, type=TYPE, agent_id=AGENT_ID, detail=invalid_detail)
 
-    @pytest.mark.parametrize("invalid_related_agent", ["", "   ", 123])
-    def test_invalid_related_agent_rejected(self, invalid_related_agent):
+    @pytest.mark.parametrize(
+        "invalid_related_agents",
+        [
+            "agent_99",  # Not a list
+            [123],  # Invalid list element type
+            ["", "   "],  # Invalid list element values (empty/whitespace)
+        ],
+    )
+    def test_invalid_related_agents_rejected(self, invalid_related_agents):
         with pytest.raises(VALIDATION_ERRORS):
             Event(
                 time=TIME,
                 type=TYPE,
                 agent_id=AGENT_ID,
                 detail=DETAIL,
-                related_agent_id=invalid_related_agent,
+                related_agent_ids=invalid_related_agents,
             )
 
     @pytest.mark.parametrize("invalid_path", ["", "   ", 123, "relative/path.txt"])
