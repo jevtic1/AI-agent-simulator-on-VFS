@@ -50,11 +50,22 @@ class TestSlotInterval:
         with pytest.raises((TypeError, ValueError)):
             SlotInterval(startTime=0, endTime=10, agentId=invalid_agent_id)
 
-    @pytest.mark.parametrize("invalid_time", ["10", 10.5, None, []])
+    @pytest.mark.parametrize("invalid_time", ["10", 10.5, None, [], True])
     def test_invalid_startTime_types(self, invalid_time):
         """Edge Case: startTime must strictly be an integer."""
         with pytest.raises((TypeError, ValueError)):
             SlotInterval(startTime=invalid_time, endTime=20, agentId="A1")
+
+    @pytest.mark.parametrize("invalid_time", ["20", 20.5, [], {}, True])
+    def test_invalid_endTime_types(self, invalid_time):
+        """Edge Case: endTime must strictly be an integer or None."""
+        with pytest.raises((TypeError, ValueError)):
+            SlotInterval(startTime=0, endTime=invalid_time, agentId="A1")
+
+    def test_endTime_before_startTime_raises_error(self):
+        """Edge Case: endTime cannot be strictly less than startTime."""
+        with pytest.raises(ValueError):
+            SlotInterval(startTime=10, endTime=5, agentId="A1")
 
     def test_startTime_is_constant_immutable(self):
         """Constraint Case: startTime must be a constant/immutable once created."""
@@ -188,9 +199,18 @@ class TestSlotHistoryManagement:
         with pytest.raises((IndexError, ValueError)):
             slot.closeCurrentInterval(clock=5)
 
+    @pytest.mark.parametrize("invalid_clock", ["15", 15.5, None, [], {}])
+    def test_closeCurrentInterval_invalid_clock_type(self, mock_agent, invalid_clock):
+        """Edge Case: Attempting to close an interval with a non-integer clock value should raise an error."""
+        slot = Slot(id=26)
+        slot.openNewInterval(clock=5, agent_id=mock_agent.id)
+
+        with pytest.raises((TypeError, ValueError)):
+            slot.closeCurrentInterval(clock=invalid_clock)
+
     def test_closeCurrentInterval_invalid_clock_before_start(self, mock_agent):
         """Edge Case: Attempting to close an interval at a time prior to its startTime should raise an error."""
-        slot = Slot(id=26)
+        slot = Slot(id=27)
         slot.openNewInterval(clock=10, agent_id=mock_agent.id)
 
         with pytest.raises(ValueError):
@@ -198,7 +218,7 @@ class TestSlotHistoryManagement:
 
     def test_full_history_lifecycle(self, mock_agent, mock_another_agent):
         """Standard Case: End-to-end integration of opening and closing multiple intervals back-to-back."""
-        slot = Slot(id=27)
+        slot = Slot(id=28)
 
         # Agent 1 takes slot from 0 to 10
         slot.openNewInterval(clock=0, agent_id=mock_agent.id)
