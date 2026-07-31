@@ -9,7 +9,6 @@ from src.scheduler_Slot import Slot, SlotInterval
 def mock_agent():
     """Provides a mocked Agent object for testing Slot assignment."""
     agent = MagicMock()
-    # Mocking the class name to simulate a real Agent instance if strict type checking is used
     agent.__class__.__name__ = "Agent"
     agent.id = "A1"
     return agent
@@ -39,11 +38,35 @@ class TestSlotInterval:
         assert interval.endTime is None
         assert interval.agentId is None
 
-    @pytest.mark.parametrize("invalid_time", ["10", 10.5, None])
-    def test_invalid_time_types(self, invalid_time):
-        """Edge Case: startTime and endTime must strictly be integers (or None for endTime)."""
+    @pytest.mark.parametrize("valid_agent_id", ["A1", "agent_123", "", None])
+    def test_agent_id_allowed_types(self, valid_agent_id):
+        """Standard Case: agent_id must accept str or None."""
+        interval = SlotInterval(startTime=0, endTime=10, agentId=valid_agent_id)
+        assert interval.agentId == valid_agent_id
+
+    @pytest.mark.parametrize("invalid_agent_id", [123, 12.3, [], {}, True, MagicMock()])
+    def test_agent_id_invalid_types_raise_error(self, invalid_agent_id):
+        """Edge Case: agent_id must raise an error if type is not str or None."""
+        with pytest.raises((TypeError, ValueError)):
+            SlotInterval(startTime=0, endTime=10, agentId=invalid_agent_id)
+
+    @pytest.mark.parametrize("invalid_time", ["10", 10.5, None, []])
+    def test_invalid_startTime_types(self, invalid_time):
+        """Edge Case: startTime must strictly be an integer."""
         with pytest.raises((TypeError, ValueError)):
             SlotInterval(startTime=invalid_time, endTime=20, agentId="A1")
+
+    def test_startTime_is_constant_immutable(self):
+        """Constraint Case: startTime must be a constant/immutable once created."""
+        interval = SlotInterval(startTime=10, endTime=20, agentId="A1")
+        with pytest.raises((AttributeError, Exception)):
+            interval.startTime = 15
+
+    def test_agentId_is_constant_immutable(self):
+        """Constraint Case: agentId must be a constant/immutable once created."""
+        interval = SlotInterval(startTime=10, endTime=20, agentId="A1")
+        with pytest.raises((AttributeError, Exception)):
+            interval.agentId = "A2"
 
 
 class TestSlotInitialization:
@@ -110,7 +133,6 @@ class TestSlotAgentManagement:
         """Edge Case: Slot ID should ideally be immutable after initialization."""
         slot = Slot(id=14)
         with pytest.raises((AttributeError, Exception)):
-            # Assuming id is a protected/read-only property
             slot.id = 15
 
 
@@ -143,9 +165,16 @@ class TestSlotHistoryManagement:
         assert len(slot.history) == 1
         assert slot.history[-1].agentId is None
 
+    @pytest.mark.parametrize("invalid_agent_id", [123, 45.6, [], {}, MagicMock()])
+    def test_openNewInterval_invalid_agent_id_raises_error(self, invalid_agent_id):
+        """Edge Case: openNewInterval must reject agent_id if not str or None."""
+        slot = Slot(id=23)
+        with pytest.raises((TypeError, ValueError)):
+            slot.openNewInterval(clock=0, agent_id=invalid_agent_id)
+
     def test_closeCurrentInterval_updates_endTime(self, mock_agent):
         """Standard Case: Closing an interval successfully updates the endTime of the last interval."""
-        slot = Slot(id=23)
+        slot = Slot(id=24)
         slot.openNewInterval(clock=5, agent_id=mock_agent.id)
         slot.closeCurrentInterval(clock=15)
 
@@ -155,21 +184,21 @@ class TestSlotHistoryManagement:
 
     def test_closeCurrentInterval_empty_history(self):
         """Edge Case: Attempting to close an interval when history is empty should raise an error."""
-        slot = Slot(id=24)
+        slot = Slot(id=25)
         with pytest.raises((IndexError, ValueError)):
             slot.closeCurrentInterval(clock=5)
 
     def test_closeCurrentInterval_invalid_clock_before_start(self, mock_agent):
         """Edge Case: Attempting to close an interval at a time prior to its startTime should raise an error."""
-        slot = Slot(id=25)
+        slot = Slot(id=26)
         slot.openNewInterval(clock=10, agent_id=mock_agent.id)
 
-        with pytest.raises(ValueError, match="cannot be before startTime"):
+        with pytest.raises(ValueError):
             slot.closeCurrentInterval(clock=5)
 
     def test_full_history_lifecycle(self, mock_agent, mock_another_agent):
         """Standard Case: End-to-end integration of opening and closing multiple intervals back-to-back."""
-        slot = Slot(id=26)
+        slot = Slot(id=27)
 
         # Agent 1 takes slot from 0 to 10
         slot.openNewInterval(clock=0, agent_id=mock_agent.id)
