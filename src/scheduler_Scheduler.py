@@ -1,5 +1,6 @@
 import heapq
 from queue import PriorityQueue
+from typing import List, Tuple
 
 from models_Agent import Agent, AgentState
 
@@ -7,7 +8,8 @@ from models_Agent import Agent, AgentState
 class Slot:
     """Helper class to represent an execution slot."""
 
-    def __init__(self):
+    def __init__(self, slot_id: int):
+        self.id = slot_id
         self.currentAgent: Agent = None
 
 
@@ -18,7 +20,7 @@ class Scheduler:
 
         self.maxRunningAgents = maxRunningAgents
         self.readyQueue = PriorityQueue()
-        self.slots = [Slot() for _ in range(maxRunningAgents)]
+        self.slots = [Slot(i) for i in range(maxRunningAgents)]
         self._counter = 0
 
     def enqueue_ready_agent(self, agent: Agent) -> None:
@@ -63,14 +65,17 @@ class Scheduler:
 
         self.enqueue_ready_agent(agent)
 
-    def scheduleNext(self) -> None:
+    def scheduleNext(self) -> List[Tuple[str, int, bool]]:
         """Fills empty slots and preempts lower priority agents if better ones are ready."""
+        assignments = []
+
         # 1. Fill empty slots first
         for slot in self.slots:
             if slot.currentAgent is None and not self.readyQueue.empty():
                 _, _, next_agent = self.readyQueue.get()
                 next_agent.state = AgentState.RUNNING
                 slot.currentAgent = next_agent
+                assignments.append((next_agent.id, slot.id, False))
 
         # 2. Preempt worst running agents if higher priority agents are in queue
         while not self.readyQueue.empty():
@@ -93,5 +98,8 @@ class Scheduler:
                 _, _, best_agent = self.readyQueue.get()
                 best_agent.state = AgentState.RUNNING
                 worst_slot.currentAgent = best_agent
+                assignments.append((best_agent.id, worst_slot.id, True))
             else:
                 break  # No higher priority agents left to cause a preemption
+
+        return assignments
