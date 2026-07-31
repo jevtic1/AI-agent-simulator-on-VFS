@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Set
+from typing import Set, Tuple, List
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class WaitForGraph:
         # discard() removes the item if it exists, and does nothing if it doesn't
         self.edges.discard(Edge(frm, to, path))
 
-    def hasCycle(self, agent_id: str) -> bool:
+    def hasCycle(self, agent_id: str) -> Tuple[bool, List[str]]:
         # Build an adjacency list representing who is waiting on whom
         adj = {}
         for edge in self.edges:
@@ -29,24 +29,32 @@ class WaitForGraph:
 
         visited = set()
         rec_stack = set()
+        path_list = []
 
-        def dfs(current_agent: str) -> bool:
+        def dfs(current_agent: str) -> Tuple[bool, List[str]]:
             # If we hit an agent currently in the recursion stack, we found a cycle
             if current_agent in rec_stack:
-                return True
+                # Extract only the sequence of agents that form the loop
+                cycle_start_index = path_list.index(current_agent)
+                return True, path_list[cycle_start_index:]
+
             # If we hit an already fully processed agent, no cycle down this path
             if current_agent in visited:
-                return False
+                return False, []
 
             visited.add(current_agent)
             rec_stack.add(current_agent)
+            path_list.append(current_agent)
 
             # Traverse all agents the current agent is waiting on
             for next_agent in adj.get(current_agent, []):
-                if dfs(next_agent):
-                    return True
+                found, cycle = dfs(next_agent)
+                if found:
+                    return True, cycle
 
+            # Backtrack
+            path_list.pop()
             rec_stack.remove(current_agent)
-            return False
+            return False, []
 
         return dfs(agent_id)

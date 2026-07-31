@@ -36,8 +36,6 @@ class TestWaitForGraph:
         graph.addEdge("A", "B", "/path/1")
         assert len(graph.edges) == 1
 
-        # Depending on implementation, graph.edges could be a list or a set.
-        # Convert to list to safely index for the assertion.
         edges_list = list(graph.edges)
         assert edges_list[0].frm == "A"
         assert edges_list[0].to == "B"
@@ -49,14 +47,13 @@ class TestWaitForGraph:
         graph.addEdge("A", "B", "/path/1")
         graph.addEdge("A", "B", "/path/1")
 
-        # Duplicates must not be allowed
         assert len(graph.edges) == 1
 
     def test_add_multiple_unique_edges(self, graph):
         """Test adding different edges between the same or different agents."""
         graph.addEdge("A", "B", "/path/1")
-        graph.addEdge("A", "B", "/path/2")  # Same agents, different path
-        graph.addEdge("A", "C", "/path/1")  # Different target
+        graph.addEdge("A", "B", "/path/2")
+        graph.addEdge("A", "C", "/path/1")
 
         assert len(graph.edges) == 3
 
@@ -74,44 +71,55 @@ class TestWaitForGraph:
         """Test removing an edge that doesn't exist (should not crash or alter graph)."""
         graph.addEdge("A", "B", "/path/1")
         try:
-            graph.removeEdge("A", "B", "/path/2")  # wrong path
-            graph.removeEdge("X", "Y", "/path/1")  # wrong agents
+            graph.removeEdge("A", "B", "/path/2")
+            graph.removeEdge("X", "Y", "/path/1")
         except Exception as e:
             pytest.fail(f"Removing a non-existent edge raised an exception: {e}")
 
         assert len(graph.edges) == 1
 
-    # --- Test hasCycle (Single Argument) ---
+    # --- Test hasCycle ---
 
     def test_has_cycle_empty_graph(self, graph):
         """An empty graph cannot have a cycle."""
-        assert graph.hasCycle("A") is False
+        assert graph.hasCycle("A") == (False, [])
 
     def test_has_cycle_single_edge(self, graph):
         """A graph with one standard edge has no cycle."""
         graph.addEdge("A", "B", "/path/1")
-        assert graph.hasCycle("A") is False
-        assert graph.hasCycle("B") is False
+
+        assert graph.hasCycle("A") == (False, [])
+        assert graph.hasCycle("B") == (False, [])
 
     def test_has_cycle_self_loop(self, graph):
         """A self-loop (agent waiting on itself) is an immediate cycle."""
         graph.addEdge("A", "A", "/path/1")
-        assert graph.hasCycle("A") is True
+
+        found, agents = graph.hasCycle("A")
+        assert found is True
+        assert agents == ["A"]
 
     def test_has_cycle_mutual_wait(self, graph):
         """Two agents waiting on each other creates a cycle (Deadlock)."""
         graph.addEdge("A", "B", "/path/1")
         graph.addEdge("B", "A", "/path/2")
-        assert graph.hasCycle("A") is True
-        assert graph.hasCycle("B") is True
+
+        found_a, agents_a = graph.hasCycle("A")
+        assert found_a is True
+        assert set(agents_a) == {"A", "B"}
+
+        found_b, agents_b = graph.hasCycle("B")
+        assert found_b is True
+        assert set(agents_b) == {"A", "B"}
 
     def test_has_cycle_transitive_no_cycle(self, graph):
         """Three agents in a line (A -> B -> C) has no cycle."""
         graph.addEdge("A", "B", "/path/1")
         graph.addEdge("B", "C", "/path/2")
-        assert graph.hasCycle("A") is False
-        assert graph.hasCycle("B") is False
-        assert graph.hasCycle("C") is False
+
+        assert graph.hasCycle("A") == (False, [])
+        assert graph.hasCycle("B") == (False, [])
+        assert graph.hasCycle("C") == (False, [])
 
     def test_has_cycle_triangle_deadlock(self, graph):
         """Three agents waiting in a circle (A -> B -> C -> A) creates a cycle."""
@@ -119,9 +127,15 @@ class TestWaitForGraph:
         graph.addEdge("B", "C", "/path/2")
         graph.addEdge("C", "A", "/path/3")
 
-        assert graph.hasCycle("A") is True
-        assert graph.hasCycle("B") is True
-        assert graph.hasCycle("C") is True
+        # The valid sequences representing this specific directional cycle
+        valid_cycle_paths = [["A", "B", "C"], ["B", "C", "A"], ["C", "A", "B"]]
+
+        for agent in ["A", "B", "C"]:
+            found, agents = graph.hasCycle(agent)
+            assert found is True
+            assert agents in valid_cycle_paths, (
+                f"Returned cycle {agents} does not match the true sequence."
+            )
 
     def test_has_cycle_reachable_cycle(self, graph):
         """An agent outside the cycle that waits on an agent inside the cycle should detect a deadlock."""
@@ -131,24 +145,44 @@ class TestWaitForGraph:
         # A is waiting on B, so A is blocked by the deadlock
         graph.addEdge("A", "B", "/path/3")
 
-        assert graph.hasCycle("A") is True
-        assert graph.hasCycle("B") is True
-        assert graph.hasCycle("C") is True
+        # Querying A should detect that it leads to a deadlock loop between B and C.
+        # A itself might not be part of the actual cycle loop, but the cycle exists.
+        found_a, agents_a = graph.hasCycle("A")
+        assert found_a is True
+        # The actual cycle is between B and C
+        assert set(agents_a) == {"B", "C"}
 
     def test_has_cycle_disconnected_agent(self, graph):
         """Checking an agent not present in the graph should return False."""
         graph.addEdge("A", "B", "/path/1")
         graph.addEdge("B", "A", "/path/2")  # A and B are deadlocked
 
-        assert graph.hasCycle("C") is False  # C is not involved
+        assert graph.hasCycle("C") == (False, [])
 
     def test_has_cycle_removed_cycle(self, graph):
         """Adding a cycle, then removing an edge should resolve the deadlock."""
         graph.addEdge("A", "B", "/path/1")
         graph.addEdge("B", "A", "/path/2")
-        assert graph.hasCycle("A") is True
+
+        found, agents = graph.hasCycle("A")
+        assert found is True
+        assert set(agents) == {"A", "B"}
 
         # Deadlock resolved
         graph.removeEdge("B", "A", "/path/2")
-        assert graph.hasCycle("A") is False
-        assert graph.hasCycle("B") is False
+        assert graph.hasCycle("A") == (False, [])
+        assert graph.hasCycle("B") == (False, [])
+
+    def test_has_cycle_complex_graph_with_side_branches(self, graph):
+        """Edge Case: Complex graph with dead ends and one internal cycle."""
+        # A -> B -> C (dead end)
+        # B -> D -> E -> D (cycle between D and E)
+        graph.addEdge("A", "B", "/path/1")
+        graph.addEdge("B", "C", "/path/2")
+        graph.addEdge("B", "D", "/path/3")
+        graph.addEdge("D", "E", "/path/4")
+        graph.addEdge("E", "D", "/path/5")
+
+        found, agents = graph.hasCycle("A")
+        assert found is True
+        assert set(agents) == {"D", "E"}
