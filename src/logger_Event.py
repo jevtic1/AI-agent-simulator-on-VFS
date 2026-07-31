@@ -7,10 +7,21 @@ class EventType(Enum):
     SLOT_ASSIGNED = auto()
     SLOT_FREED = auto()
     PREEMPTED = auto()
+    THINKING = auto()
+    THINK_DONE = auto()
     OPEN_GRANTED = auto()
     OPEN_BLOCKED = auto()
     OPEN_REJECTED = auto()
-    LOCK_RELEASED = auto()
+    OPEN_ERROR = auto()
+    READ_DONE = auto()
+    READ_ERROR = auto()
+    WRITE_DONE = auto()
+    WRITE_ERROR = auto()
+    APPEND_DONE = auto()
+    APPEND_ERROR = auto()
+    CLOSE_DONE = auto()
+    CLOSE_ERROR = auto()
+    UNKNOWN_ERROR = auto()
     OPERATION_DONE = auto()
     AGENT_TERMINATED = auto()
 
@@ -21,7 +32,7 @@ class Event:
     type: EventType
     agent_id: str
     detail: str
-    related_agent_id: str | None = None
+    related_agent_ids: list[str] | None = None
     path: str | None = None
 
     def __post_init__(self):
@@ -45,13 +56,16 @@ class Event:
         if not isinstance(self.detail, str):
             raise TypeError("detail must be a string.")
 
-        # Validate related_agent_id (must be None or non-empty string)
-        if self.related_agent_id is not None:
-            if (
-                not isinstance(self.related_agent_id, str)
-                or not self.related_agent_id.strip()
-            ):
-                raise ValueError("related_agent_id must be None or a non-empty string.")
+        # Validate related_agent_ids (must be None or a list of non-empty strings)
+        if self.related_agent_ids is not None:
+            if not isinstance(self.related_agent_ids, list):
+                raise TypeError("related_agent_ids must be a list or None.")
+
+            for agent in self.related_agent_ids:
+                if not isinstance(agent, str) or not agent.strip():
+                    raise ValueError(
+                        "elements in related_agent_ids must be non-empty strings."
+                    )
 
         # Validate path (must be None or start with '/')
         if self.path is not None:
