@@ -154,6 +154,7 @@ class TestSlotHistoryManagement:
         slot.openNewInterval(clock=0, agent_id=mock_agent.id)
 
         assert len(slot.history) == 1
+        assert isinstance(slot.history[0], SlotInterval)
         assert slot.history[0].startTime == 0
         assert slot.history[0].endTime is None
         assert slot.history[0].agentId == "A1"
