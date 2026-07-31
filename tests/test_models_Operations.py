@@ -20,9 +20,11 @@ from vfs_FileHandle import FileHandle
 
 @pytest.fixture
 def agent():
-    return Agent(
+    created_agent = Agent(
         id="agent_1", priority=1, arrival_time=0, operations=[], isPreemptible=True
     )
+    created_agent.state = AgentState.RUNNING
+    return created_agent
 
 
 @pytest.fixture
@@ -287,8 +289,9 @@ class TestWriteOp:
         assert vfs.resolve("/docs/data.txt").read() == "Completely overwritten data."
 
     def test_write_op_fails_if_invalid_mode(self, agent, vfs, lock_manager):
+
         agent.handles["h_write"] = FileHandle(
-            id="h_write", path="/docs/data.txt", mode="ro", agentId=agent.id
+            id="h_write", path="/docs/readme.txt", mode="ro", agentId=agent.id
         )
         op = WriteOp(handle="h_write", data="Should not write")
 
@@ -334,7 +337,7 @@ class TestAppendOp:
 
     def test_append_op_fails_if_invalid_mode(self, agent, vfs, lock_manager):
         agent.handles["h_append"] = FileHandle(
-            id="h_append", path="/docs/log.txt", mode="ro", agentId=agent.id
+            id="h_append", path="/docs/readme.txt", mode="ro", agentId=agent.id
         )
         op = AppendOp(handle="h_append", data="line 2")
 
