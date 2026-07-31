@@ -31,7 +31,6 @@ class TestLockManagerInitialization:
         """Standard Case: LockManager initializes with an empty lock tracking structure and a wait-for graph."""
         assert hasattr(empty_lock_manager, "locks")
         assert len(empty_lock_manager.locks) == 0
-        # LockManager must now have a waitForGraph attribute
         assert hasattr(empty_lock_manager, "waitForGraph")
         assert isinstance(empty_lock_manager.waitForGraph, WaitForGraph)
 
@@ -48,9 +47,12 @@ class TestLockManagerAcquire:
         agent = create_test_agent("A1")
         path = "/data/file1"
 
-        result = empty_lock_manager.acquire(agent, path, mode)
+        granted, waiting_on, cycle = empty_lock_manager.acquire(agent, path, mode)
 
-        assert result is True
+        assert granted is True
+        assert waiting_on == []
+        assert cycle == []
+
         assert path in empty_lock_manager.locks
 
         lock = empty_lock_manager.locks[path]
@@ -71,9 +73,12 @@ class TestLockManagerAcquire:
         empty_lock_manager.acquire(agent1, path, "read")
 
         # Agent 2 requests read
-        result = empty_lock_manager.acquire(agent2, path, "read")
+        granted, waiting_on, cycle = empty_lock_manager.acquire(agent2, path, "read")
 
-        assert result is True
+        assert granted is True
+        assert waiting_on == []
+        assert cycle == []
+
         lock = empty_lock_manager.locks[path]
         assert lock.type == "shared"
         assert agent1 in lock.holders
@@ -95,9 +100,12 @@ class TestLockManagerAcquire:
         empty_lock_manager.acquire(agent2, path, "read")
 
         # Agent 3 requests write, must block on both A1 and A2
-        result = empty_lock_manager.acquire(agent3, path, mode)
+        granted, waiting_on, cycle = empty_lock_manager.acquire(agent3, path, mode)
 
-        assert result is False
+        assert granted is False
+        assert set(waiting_on) == {"A1", "A2"}
+        assert cycle == []
+
         lock = empty_lock_manager.locks[path]
 
         # Agent 1 and 2 still hold it
@@ -127,9 +135,12 @@ class TestLockManagerAcquire:
 
         empty_lock_manager.acquire(agent1, path, "write")
 
-        result = empty_lock_manager.acquire(agent2, path, mode)
+        granted, waiting_on, cycle = empty_lock_manager.acquire(agent2, path, mode)
 
-        assert result is False
+        assert granted is False
+        assert waiting_on == ["A1"]
+        assert cycle == []
+
         lock = empty_lock_manager.locks[path]
 
         assert agent1 in lock.holders
@@ -156,26 +167,31 @@ class TestLockManagerAcquire:
         path1 = "/data/file1"
         path2 = "/data/file2"
 
-        # Setup: A1 holds path1, A2 holds path2
+        # Setup: A1 holds path1, A2 holds path2[cite: 11]
         empty_lock_manager.acquire(agent1, path1, "write")
         empty_lock_manager.acquire(agent2, path2, "write")
 
         # A1 requests path2 -> Blocks, edge A1 -> A2 added
-        result1 = empty_lock_manager.acquire(agent1, path2, "read")
-        assert result1 is False
+        granted1, waiting1, cycle1 = empty_lock_manager.acquire(agent1, path2, "read")
+        assert granted1 is False
+        assert waiting1 == ["A2"]
+        assert cycle1 == []
         assert agent1.state == AgentState.BLOCKED
 
         # A2 requests path1 -> Will cause cycle (A2 waits on A1, A1 waits on A2)
-        result2 = empty_lock_manager.acquire(agent2, path1, "read")
+        granted2, waiting2, cycle2 = empty_lock_manager.acquire(agent2, path1, "read")
 
         # Deadlock handling expectations:
-        assert result2 is False
-        # Agent state must remain untouched
+        assert granted2 is False
+        assert waiting2 == []
+        assert set(cycle2) == {"A1", "A2"}
+
+        # Agent state must remain untouched[cite: 11]
         assert agent2.state == AgentState.RUNNING
         # Agent must not be added to waiters
         lock1 = empty_lock_manager.locks[path1]
         assert agent2 not in lock1.waiters
-        # The speculative graph edge must be rolled back
+        # The speculative graph edge must be rolled back[cite: 11]
         edges = empty_lock_manager.waitForGraph.edges
         assert not any(
             e.frm == agent2.id and e.to == agent1.id and e.path == path1 for e in edges
@@ -190,7 +206,7 @@ class TestLockManagerRelease:
         agent3 = create_test_agent("A3")
         path = "/data/file1"
 
-        # Setup: A1 and A2 hold read, A3 is waiting for write
+        # Setup: A1 and A2 hold read, A3 is waiting for write[cite: 11]
         empty_lock_manager.acquire(agent1, path, "read")
         empty_lock_manager.acquire(agent2, path, "read")
         empty_lock_manager.acquire(agent3, path, "write")
@@ -198,14 +214,15 @@ class TestLockManagerRelease:
         lock = empty_lock_manager.locks[path]
 
         # Action: A1 releases
-        empty_lock_manager.release(agent1, path)
+        woken_agents = empty_lock_manager.release(agent1, path)
 
         # Assertions
+        assert woken_agents == []
         assert agent1 not in lock.holders
         assert agent2 in lock.holders
         assert lock.type == "shared"  # Stays shared
 
-        # A3 is still waiting because A2 holds the lock
+        # A3 is still waiting because A2 holds the lock[cite: 11]
         assert agent3 in lock.waiters
         assert agent3.state == AgentState.BLOCKED
         # Lock should still exist in the dictionary
@@ -220,7 +237,7 @@ class TestLockManagerRelease:
         agent3 = create_test_agent("A3")
         path = "/data/file1"
 
-        # Setup: A1 holds write, A2 and A3 are waiting
+        # Setup: A1 holds write, A2 and A3 are waiting[cite: 11]
         empty_lock_manager.acquire(agent1, path, "write")
         empty_lock_manager.acquire(agent2, path, "read")
         empty_lock_manager.acquire(agent3, path, "write")
@@ -230,10 +247,13 @@ class TestLockManagerRelease:
         assert any(e.frm == agent2.id and e.path == path for e in edges_before)
         assert any(e.frm == agent3.id and e.path == path for e in edges_before)
 
-        # Action: A1 releases (the only holder)
-        empty_lock_manager.release(agent1, path)
+        # Action: A1 releases (the only holder)[cite: 11]
+        woken_agents = empty_lock_manager.release(agent1, path)
 
         # Assertions
+        # Woken agents must be explicitly returned
+        assert set(woken_agents) == {"A2", "A3"}
+
         # 1. Woken agents must be READY
         assert agent2.state == AgentState.READY
         assert agent3.state == AgentState.READY
@@ -250,7 +270,8 @@ class TestLockManagerRelease:
         """Edge Case: Releasing a lock that does not exist should be handled gracefully."""
         agent = create_test_agent("A1")
         # Should not raise an exception or crash
-        empty_lock_manager.release(agent, "/data/ghost_file")
+        woken_agents = empty_lock_manager.release(agent, "/data/ghost_file")
+        assert woken_agents == []
 
     def test_release_agent_not_in_holders(self, empty_lock_manager):
         """Edge Case: Releasing an agent that doesn't actually hold the lock."""
@@ -260,8 +281,9 @@ class TestLockManagerRelease:
 
         empty_lock_manager.acquire(agent1, path, "read")
 
-        # Agent 2 tries to release Agent 1's lock
-        empty_lock_manager.release(agent2, path)
+        # Agent 2 tries to release Agent 1's lock[cite: 11]
+        woken_agents = empty_lock_manager.release(agent2, path)
 
+        assert woken_agents == []
         lock = empty_lock_manager.locks[path]
         assert agent1 in lock.holders  # A1 still has it
