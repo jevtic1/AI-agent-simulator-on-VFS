@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.scheduler_Slot import Slot
+from src.scheduler_Slot import Slot, SlotInterval
 
 
 @pytest.fixture
@@ -24,12 +24,37 @@ def mock_another_agent():
     return agent
 
 
+class TestSlotInterval:
+    def test_initialization(self):
+        """Standard Case: Valid initialization of SlotInterval."""
+        interval = SlotInterval(startTime=10, endTime=20, agentId="A1")
+        assert interval.startTime == 10
+        assert interval.endTime == 20
+        assert interval.agentId == "A1"
+
+    def test_initialization_empty_slot(self):
+        """Standard Case: SlotInterval when nobody occupies the slot (agentId is None)."""
+        interval = SlotInterval(startTime=5, endTime=None, agentId=None)
+        assert interval.startTime == 5
+        assert interval.endTime is None
+        assert interval.agentId is None
+
+    @pytest.mark.parametrize("invalid_time", ["10", 10.5, None])
+    def test_invalid_time_types(self, invalid_time):
+        """Edge Case: startTime and endTime must strictly be integers (or None for endTime)."""
+        with pytest.raises((TypeError, ValueError)):
+            SlotInterval(startTime=invalid_time, endTime=20, agentId="A1")
+
+
 class TestSlotInitialization:
     def test_initialization_with_id_only(self):
-        """Standard Case: A slot initialized with only an ID should have no currentAgent."""
+        """Standard Case: A slot initialized with only an ID should have no currentAgent and empty history."""
         slot = Slot(id=1)
         assert slot.id == 1
         assert slot.currentAgent is None
+        assert hasattr(slot, "history")
+        assert isinstance(slot.history, list)
+        assert len(slot.history) == 0
 
     def test_initialization_with_agent(self, mock_agent):
         """Standard Case: A slot initialized with an ID and an Agent."""
@@ -87,3 +112,90 @@ class TestSlotAgentManagement:
         with pytest.raises((AttributeError, Exception)):
             # Assuming id is a protected/read-only property
             slot.id = 15
+
+
+class TestSlotHistoryManagement:
+    def test_openNewInterval_creates_first_entry(self, mock_agent):
+        """Standard Case: Opening a new interval adds the first SlotInterval to history."""
+        slot = Slot(id=20)
+        slot.openNewInterval(clock=0, agent_id=mock_agent.id)
+
+        assert len(slot.history) == 1
+        assert slot.history[0].startTime == 0
+        assert slot.history[0].endTime is None
+        assert slot.history[0].agentId == "A1"
+
+    def test_openNewInterval_appends_to_end(self, mock_agent, mock_another_agent):
+        """Standard Case: Subsequent new intervals are correctly appended to the end of history."""
+        slot = Slot(id=21)
+        slot.openNewInterval(clock=0, agent_id=mock_agent.id)
+        slot.openNewInterval(clock=5, agent_id=mock_another_agent.id)
+
+        assert len(slot.history) == 2
+        assert slot.history[-1].startTime == 5
+        assert slot.history[-1].agentId == "A2"
+
+    def test_openNewInterval_unoccupied(self):
+        """Standard Case: Agent ID is None when nobody occupies the slot."""
+        slot = Slot(id=22)
+        slot.openNewInterval(clock=10, agent_id=None)
+
+        assert len(slot.history) == 1
+        assert slot.history[-1].agentId is None
+
+    def test_closeCurrentInterval_updates_endTime(self, mock_agent):
+        """Standard Case: Closing an interval successfully updates the endTime of the last interval."""
+        slot = Slot(id=23)
+        slot.openNewInterval(clock=5, agent_id=mock_agent.id)
+        slot.closeCurrentInterval(clock=15)
+
+        assert len(slot.history) == 1
+        assert slot.history[-1].endTime == 15
+        assert slot.history[-1].startTime == 5
+
+    def test_closeCurrentInterval_empty_history(self):
+        """Edge Case: Attempting to close an interval when history is empty should raise an error."""
+        slot = Slot(id=24)
+        with pytest.raises((IndexError, ValueError)):
+            slot.closeCurrentInterval(clock=5)
+
+    def test_closeCurrentInterval_invalid_clock_before_start(self, mock_agent):
+        """Edge Case: Attempting to close an interval at a time prior to its startTime should raise an error."""
+        slot = Slot(id=25)
+        slot.openNewInterval(clock=10, agent_id=mock_agent.id)
+
+        with pytest.raises(ValueError, match="cannot be before startTime"):
+            slot.closeCurrentInterval(clock=5)
+
+    def test_full_history_lifecycle(self, mock_agent, mock_another_agent):
+        """Standard Case: End-to-end integration of opening and closing multiple intervals back-to-back."""
+        slot = Slot(id=26)
+
+        # Agent 1 takes slot from 0 to 10
+        slot.openNewInterval(clock=0, agent_id=mock_agent.id)
+        slot.closeCurrentInterval(clock=10)
+
+        # Slot is empty from 10 to 15
+        slot.openNewInterval(clock=10, agent_id=None)
+        slot.closeCurrentInterval(clock=15)
+
+        # Agent 2 takes slot from 15 to 30
+        slot.openNewInterval(clock=15, agent_id=mock_another_agent.id)
+        slot.closeCurrentInterval(clock=30)
+
+        assert len(slot.history) == 3
+
+        # Verify first segment
+        assert slot.history[0].startTime == 0
+        assert slot.history[0].endTime == 10
+        assert slot.history[0].agentId == "A1"
+
+        # Verify idle segment
+        assert slot.history[1].startTime == 10
+        assert slot.history[1].endTime == 15
+        assert slot.history[1].agentId is None
+
+        # Verify second segment
+        assert slot.history[2].startTime == 15
+        assert slot.history[2].endTime == 30
+        assert slot.history[2].agentId == "A2"
