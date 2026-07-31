@@ -1,3 +1,4 @@
+from typing import Tuple, List
 from locking_Lock import Lock
 from locking_WaitForGraph import WaitForGraph
 from models_Agent import Agent, AgentState
@@ -5,83 +6,72 @@ from models_Agent import Agent, AgentState
 
 class LockManager:
     def __init__(self):
-        # Maps a string path to a Lock object
-        self.locks: dict[str, Lock] = {}
-        # Wait-for graph for deadlock detection
+        self.locks = {}
         self.waitForGraph = WaitForGraph()
 
-    def acquire(self, agent: Agent, path: str, mode: str) -> bool:
-        if mode not in ("read", "write", "append"):
-            raise ValueError(
-                f"Invalid mode '{mode}'. Must be 'read', 'write', or 'append'."
-            )
+    def acquire(
+        self, agent: Agent, path: str, mode: str
+    ) -> Tuple[bool, List[str], List[str]]:
+        if mode not in ["read", "write", "append"]:
+            raise ValueError(f"Invalid mode: {mode}")
 
-        requested_type = "shared" if mode == "read" else "exclusive"
+        expected_type = "shared" if mode == "read" else "exclusive"
 
-        # Case 1: Lock doesn't exist yet
         if path not in self.locks:
-            new_lock = Lock(path, requested_type)
+            # Initialize Lock with 'path' and 'type', then append the agent
+            new_lock = Lock(path=path, type=expected_type)
             new_lock.holders.append(agent)
             self.locks[path] = new_lock
-            return True
+            return True, [], []
 
         lock = self.locks[path]
 
-        # Case 2: Lock exists and is compatible (Shared + Read)
-        if lock.type == "shared" and mode == "read":
-            lock.holders.append(agent)
-            return True
+        if expected_type == "shared" and lock.type == "shared":
+            if agent not in lock.holders:
+                lock.holders.append(agent)
+            return True, [], []
 
-        # Case 3: Incompatible (Shared + Write/Append OR Exclusive + Anything)
-        # Speculatively add edges to the wait-for graph
-        added_edges = []
         for holder in lock.holders:
             self.waitForGraph.addEdge(agent.id, holder.id, path)
-            added_edges.append((agent.id, holder.id, path))
 
-        # Check for cycles
-        if self.waitForGraph.hasCycle(agent.id):
-            # Deadlock detected: Roll back speculative edges
-            for frm, to, p in added_edges:
-                self.waitForGraph.removeEdge(frm, to, p)
-            # Reject acquisition completely without blocking
-            return False
+        # Check for wait cycles
+        has_cycle, cycle_path = self.waitForGraph.hasCycle(agent.id)
 
-        # No cycle detected: Safe to wait
-        lock.waiters.append(agent)
+        if has_cycle:
+            for holder in lock.holders:
+                self.waitForGraph.removeEdge(agent.id, holder.id, path)
+            return False, [], cycle_path
+
         agent.state = AgentState.BLOCKED
-        return False
+        if agent not in lock.waiters:
+            lock.waiters.append(agent)
 
-    def release(self, agent: Agent, path: str) -> None:
-        # Gracefully handle non-existent locks
+        waiting_on = [holder.id for holder in lock.holders]
+        return False, waiting_on, []
+
+    def release(self, agent: Agent, path: str) -> List[str]:
         if path not in self.locks:
-            return
+            return []
 
         lock = self.locks[path]
 
-        # Gracefully handle if agent isn't actually holding the lock
         if agent not in lock.holders:
-            return
+            return []
 
-        # Remove the agent from holders
         lock.holders.remove(agent)
 
-        # If the lock is fully free
-        if not lock.holders:
-            waiter_ids = {w.id for w in lock.waiters}
+        if len(lock.holders) > 0:
+            return []
 
-            # Identify and delete all wait-for edges for the promoted waiters on this path
-            edges_to_remove = [
-                e
-                for e in self.waitForGraph.edges
-                if e.path == path and e.frm in waiter_ids
-            ]
-            for e in edges_to_remove:
-                self.waitForGraph.removeEdge(e.frm, e.to, e.path)
+        woken_agents = []
+        for waiter in lock.waiters:
+            waiter.state = AgentState.READY
+            woken_agents.append(waiter.id)
 
-            # Wake all waiters
-            for waiter in lock.waiters:
-                waiter.state = AgentState.READY
+        edges_to_remove = [e for e in self.waitForGraph.edges if e.path == path]
+        for edge in edges_to_remove:
+            self.waitForGraph.removeEdge(edge.frm, edge.to, edge.path)
 
-            # Delete the lock completely from the manager
-            del self.locks[path]
+        del self.locks[path]
+
+        return woken_agents
