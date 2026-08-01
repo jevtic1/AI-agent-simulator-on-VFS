@@ -63,12 +63,12 @@ class SimulationEngine:
                 if agent.id not in newly_assigned_agents:
                     # Existing agents are advanced
                     outcome = slot.currentAgent.advance(self.vfs, self.lock_manager)
-                    self.handle(agent.id, outcome, slot, self.clock)
+                    self.handle(agent, outcome, slot, self.clock)
 
         self.clock += 1
         return True
 
-    def handle(self, agent_id, outcome, slot, clock):
+    def handle(self, agent, outcome, slot, clock):
         """Internal handler for processing the result of an agent's advance() step."""
         pass
 
