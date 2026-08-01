@@ -207,6 +207,107 @@ class TestSimulationEngineTick:
         assert result is True
 
 
+class TestSimulationEngineHandle:
+    """Tests the handle() method of SimulationEngine."""
+
+    def test_handle_logs_event_and_keeps_slot_on_success(
+        self, engine, mock_slot_factory
+    ):
+        """Standard Case: A successful/pending agent execution logs an event but remains in the slot."""
+        mock_slot = mock_slot_factory(slot_id=1, current_agent="agent_1")
+        # outcome tuple structure: (status, event_type, detail, related_agent_ids, path)
+        outcome = (
+            "SUCCESS",
+            EventType.READ_DONE,
+            "File read successfully",
+            [],
+            None,
+        )
+
+        engine.handle("agent_1", outcome, mock_slot, 15)
+
+        # Verify the event was correctly parsed and logged
+        actual_event = engine.logger.log.call_args[0][0]
+        assert actual_event.time == 15
+        assert actual_event.type == EventType.READ_DONE
+        assert actual_event.agent_id == "agent_1"
+        assert actual_event.detail == "File read successfully"
+        assert actual_event.related_agent_ids == []
+        assert actual_event.path == None
+
+        # Verify the slot was NOT released
+        assert mock_slot.currentAgent == "agent_1"
+
+    def test_handle_logs_event_and_releases_slot_on_terminated(
+        self, engine, mock_slot_factory
+    ):
+        """Standard Case: If an agent's outcome status is TERMINATED, the slot must be released."""
+        mock_slot = mock_slot_factory(slot_id=1, current_agent="agent_1")
+        outcome = (
+            "TERMINATED",
+            EventType.AGENT_TERMINATED,
+            "Agent completed operations",
+            [],
+            None,
+        )
+
+        engine.handle("agent_1", outcome, mock_slot, 20)
+
+        # Verify the completion event was logged
+        actual_event = engine.logger.log.call_args[0][0]
+        assert actual_event.time == 20
+        assert actual_event.type == EventType.AGENT_TERMINATED
+        assert actual_event.agent_id == "agent_1"
+
+        # Verify the slot WAS released
+        assert mock_slot.currentAgent is None
+
+    def test_handle_logs_event_and_releases_slot_on_blocked(
+        self, engine, mock_slot_factory
+    ):
+        """Standard Case: If an agent's outcome status is BLOCKED, the slot must be released."""
+        mock_slot = mock_slot_factory(slot_id=1, current_agent="agent_1")
+        outcome = (
+            "BLOCKED",
+            EventType.OPEN_BLOCKED,
+            "Waiting for resource",
+            ["agent_2"],
+            "/tmp/lock",
+        )
+
+        engine.handle("agent_1", outcome, mock_slot, 25)
+
+        # Verify the blocking event was logged
+        actual_event = engine.logger.log.call_args[0][0]
+        assert actual_event.time == 25
+        assert actual_event.type == EventType.OPEN_BLOCKED
+        assert actual_event.agent_id == "agent_1"
+        assert actual_event.detail == "Waiting for resource"
+        assert actual_event.related_agent_ids == ["agent_2"]
+        assert actual_event.path == "/tmp/lock"
+
+        # Verify the slot WAS released
+        assert mock_slot.currentAgent is None
+
+    def test_handle_edge_case_ignores_none_event_type(self, engine, mock_slot_factory):
+        """Edge Case: Ensure handle properly processes an outcome even if the event_type is None."""
+        mock_slot = mock_slot_factory(slot_id=1, current_agent="agent_1")
+        # An agent advancing might not produce a distinct event this tick
+        outcome = ("RUNNING", None, "Executing compute", [], None)
+
+        engine.handle("agent_1", outcome, mock_slot, 30)
+
+        # Verify event was still created and logged (with None for type)
+        actual_event = engine.logger.log.call_args[0][0]
+        assert actual_event.time == 30
+        assert actual_event.type is None
+        assert actual_event.agent_id == "agent_1"
+        assert actual_event.detail == "Executing compute"
+
+        # Verify the slot was NOT released
+        assert mock_slot.currentAgent == "agent_1"
+
+
 class TestSimulationEngineRun:
     """Tests the primary run loop of the SimulationEngine."""
 
