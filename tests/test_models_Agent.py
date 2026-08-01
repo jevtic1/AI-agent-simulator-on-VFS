@@ -242,7 +242,7 @@ class TestAgentAdvance:
 
         # Simulate execute() mutating the operation's remaining time
         def mock_execute(*args, **kwargs):
-            op.remaining--
+            op.remaining -= 1
             return expected_return
 
         op.execute.side_effect = mock_execute
@@ -272,7 +272,7 @@ class TestAgentAdvance:
 
         # Simulate execute() dropping remaining time, but not to 0
         def mock_execute(*args, **kwargs):
-            op.remaining--
+            op.remaining -= 1
             return expected_return
 
         op.execute.side_effect = mock_execute
