@@ -231,47 +231,80 @@ class TestAgentAdvance:
         self, agent, mock_operations
     ):
         op = mock_operations[0]
-        # Operation is complete
-        op.remaining = 0
-        # Initialize to False to ensure the method sets it to True
-        agent.isPreemptible = False
-
-        vfs_mock = MagicMock()
-        lock_manager_mock = MagicMock()
-
-        agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
-
-        # Assert execute was triggered during advance
-        op.execute.assert_called_once_with(agent, vfs_mock, lock_manager_mock)
-
-        # Verify index progresses and isPreemptible flag is reset
-        assert agent.current_op_index == 1
-        assert agent.isPreemptible is True
-
-    def test_advance_calls_execute_does_not_increment_if_remaining_time(
-        self, agent, mock_operations
-    ):
-        op = mock_operations[0]
-        # Operation still has remaining time
+        # Set to > 0 initially to prove the check happens AFTER execute()
         op.remaining = 1
         agent.isPreemptible = False
 
         vfs_mock = MagicMock()
         lock_manager_mock = MagicMock()
 
-        agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+        expected_return = ("SUCCESS", None, "Operation completed", [], "/dummy/path")
+
+        # Simulate execute() mutating the operation's remaining time
+        def mock_execute(*args, **kwargs):
+            op.remaining--
+            return expected_return
+
+        op.execute.side_effect = mock_execute
+
+        result = agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+
+        # Assert execute was triggered during advance
+        op.execute.assert_called_once_with(agent, vfs_mock, lock_manager_mock)
+
+        # Verify index progresses and isPreemptible flag is reset because remaining is now 0
+        assert agent.current_op_index == 1
+        assert agent.isPreemptible is True
+        assert result == expected_return
+
+    def test_advance_calls_execute_does_not_increment_if_remaining_time(
+        self, agent, mock_operations
+    ):
+        op = mock_operations[0]
+        # Set to 2 initially, execute will drop it to 1
+        op.remaining = 2
+        agent.isPreemptible = False
+
+        vfs_mock = MagicMock()
+        lock_manager_mock = MagicMock()
+
+        expected_return = ("PENDING", None, "Operation in progress", ["A2"], None)
+
+        # Simulate execute() dropping remaining time, but not to 0
+        def mock_execute(*args, **kwargs):
+            op.remaining--
+            return expected_return
+
+        op.execute.side_effect = mock_execute
+
+        result = agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
 
         op.execute.assert_called_once_with(agent, vfs_mock, lock_manager_mock)
 
-        # Verify index and flag remain unaffected when not remaining == 0
+        # Verify index and flag remain unaffected because remaining is not 0
         assert agent.current_op_index == 0
         assert agent.isPreemptible is False
+        assert result == expected_return
 
     def test_advance_updates_state_when_finished(self, agent, mock_operations):
         vfs_mock = MagicMock()
         lock_manager_mock = MagicMock()
 
-        # 0 remaining time means both will immediately resolve
+        # Simulate both operations completing their work upon execution
+        def execute_op0(*args, **kwargs):
+            mock_operations[0].remaining = 0
+            return ("DONE", None, "", [], None)
+
+        def execute_op1(*args, **kwargs):
+            mock_operations[1].remaining = 0
+            return ("DONE", None, "", [], None)
+
+        mock_operations[0].remaining = 1
+        mock_operations[0].execute.side_effect = execute_op0
+
+        mock_operations[1].remaining = 1
+        mock_operations[1].execute.side_effect = execute_op1
+
         agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
         agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
 
@@ -283,11 +316,26 @@ class TestAgentAdvance:
         vfs_mock = MagicMock()
         lock_manager_mock = MagicMock()
 
+        def execute_op0(*args, **kwargs):
+            mock_operations[0].remaining = 0
+            return ("DONE", None, "", [], None)
+
+        def execute_op1(*args, **kwargs):
+            mock_operations[1].remaining = 0
+            return ("DONE", None, "", [], None)
+
+        mock_operations[0].remaining = 1
+        mock_operations[0].execute.side_effect = execute_op0
+
+        mock_operations[1].remaining = 1
+        mock_operations[1].execute.side_effect = execute_op1
+
+        # Advance through all operations
         agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
         agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
 
         # Final call out of bounds
-        agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+        result = agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
 
         assert agent.current_op_index == len(agent.operations)
         assert agent.state == AgentState.TERMINATED
@@ -295,6 +343,7 @@ class TestAgentAdvance:
         # Ensure it didn't crash and operations were only executed the intended amount of times
         mock_operations[0].execute.assert_called_once()
         mock_operations[1].execute.assert_called_once()
+        assert result is None
 
 
 class TestAgentHandles:
