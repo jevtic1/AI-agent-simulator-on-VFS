@@ -4,7 +4,6 @@ import pytest
 
 # Direct import - will cause test collection to fail until engine.py and SimulationEngine are implemented
 from engine_SimulationEngine import SimulationEngine
-
 from logger_Event import Event, EventType
 
 # Dependencies based on provided system specifications
@@ -58,6 +57,7 @@ def mock_agent_factory():
     def _create_agent(agent_id, arrival_time, state=AgentState.NEW):
         agent = MagicMock(spec=Agent)
         agent.id = agent_id
+        agent.priority = 2
         agent.arrival_time = arrival_time
         agent.state = state
         agent.advance = MagicMock(return_value="MOCK_OUTCOME")
@@ -117,10 +117,10 @@ class TestSimulationEngineTick:
         mock_scheduler.enqueue_ready_agent.assert_called_once_with(agent1)
 
         # Verify the arrival event was logged
-        dummy_event = mock_event_factory(
-            time=5, event_type=EventType.AGENT_ARRIVED, agent_id="agent_1"
-        )
-        mock_logger.log.assert_called_with(dummy_event)
+        actual_event = mock_logger.log.call_args[0][0]
+        assert actual_event.time == 5
+        assert actual_event.type == EventType.AGENT_ARRIVED
+        assert actual_event.agent_id == "agent_1"
 
         # The future agent should be ignored this tick
         assert agent2.state == AgentState.NEW
@@ -135,7 +135,7 @@ class TestSimulationEngineTick:
         mock_event_factory,
     ):
         """Standard Case: newlyAssigned agents have their intervals updated on the slot."""
-        engine.clock = 2
+        engine.clock = 5
 
         # Setup newly assigned pair
         mock_agent = mock_agent_factory("agent_X", arrival_time=0)
@@ -147,14 +147,14 @@ class TestSimulationEngineTick:
         engine.tick()
 
         # Slot metrics should be finalized for prior state and opened for new agent
-        mock_slot.closeCurrentInterval.assert_called_once_with(engine.clock)
-        mock_slot.openNewInterval.assert_called_once_with(engine.clock, "agent_X")
+        mock_slot.closeCurrentInterval.assert_called_once_with(engine.clock - 1)
+        mock_slot.openNewInterval.assert_called_once_with(engine.clock - 1, "agent_X")
 
         # Must log the slot assignment
-        dummy_event = mock_event_factory(
-            time=5, event_type=EventType.AGENT_ARRIVED, agent_id="agent_1"
-        )
-        mock_logger.log.assert_called_with(dummy_event)
+        actual_event = mock_logger.log.call_args[0][0]
+        assert actual_event.time == 5
+        assert actual_event.type == EventType.SLOT_ASSIGNED
+        assert actual_event.agent_id == "agent_X"
 
     def test_tick_phase3_execution_advances_only_existing_running_agents(
         self, engine, mock_scheduler, mock_agent_factory, mock_slot_factory
@@ -178,7 +178,7 @@ class TestSimulationEngineTick:
         # Phase 3 validations
         existing_agent.advance.assert_called_once()
         engine.handle.assert_called_once_with(
-            "MOCK_OUTCOME", existing_slot, engine.clock
+            "MOCK_OUTCOME", existing_slot, engine.clock - 1
         )
 
         # Edge Case: Newly assigned slot must NOT advance in the same tick it was scheduled
