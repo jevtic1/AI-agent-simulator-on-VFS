@@ -1,0 +1,221 @@
+from unittest.mock import MagicMock
+
+import pytest
+
+# Direct import - will cause test collection to fail until engine.py and SimulationEngine are implemented
+from engine_SimulationEngine import SimulationEngine
+
+from logger_Event import Event, EventType
+
+# Dependencies based on provided system specifications
+from models_Agent import Agent, AgentState
+
+
+@pytest.fixture
+def mock_event_factory():
+    """Helper fixture to create mocked Events without triggering dataclass validation."""
+
+    def _create_event(
+        time: int,
+        event_type: EventType,
+        agent_id: str,
+        detail: str = "Mock detail",
+        related_agent_ids: list[str] | None = None,
+        path: str | None = None,
+    ):
+        event = MagicMock(spec=Event)
+        event.time = time
+        event.type = event_type
+        event.agent_id = agent_id
+        event.detail = detail
+        event.related_agent_ids = related_agent_ids
+        event.path = path
+        return event
+
+    return _create_event
+
+
+@pytest.fixture
+def mock_scheduler():
+    """Provides a mocked Scheduler to control readyQueue and slot assignments."""
+    scheduler = MagicMock()
+    scheduler.slots = []
+    scheduler.enqueue_ready_agent = MagicMock()
+    scheduler.scheduleNext = MagicMock(return_value=[])
+    return scheduler
+
+
+@pytest.fixture
+def mock_logger():
+    """Provides a mocked EventLogger."""
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_agent_factory():
+    """Helper fixture to create mocked Agents."""
+
+    def _create_agent(agent_id, arrival_time, state=AgentState.NEW):
+        agent = MagicMock(spec=Agent)
+        agent.id = agent_id
+        agent.arrival_time = arrival_time
+        agent.state = state
+        agent.advance = MagicMock(return_value="MOCK_OUTCOME")
+        return agent
+
+    return _create_agent
+
+
+@pytest.fixture
+def mock_slot_factory():
+    """Helper fixture to create mocked Slots."""
+
+    def _create_slot(slot_id, current_agent=None):
+        slot = MagicMock()
+        slot.id = slot_id
+        slot.currentAgent = current_agent
+        slot.closeCurrentInterval = MagicMock()
+        slot.openNewInterval = MagicMock()
+        return slot
+
+    return _create_slot
+
+
+@pytest.fixture
+def engine(mock_scheduler, mock_logger):
+    """Initializes the SimulationEngine with mocked dependencies."""
+    return SimulationEngine(
+        agents=[],
+        scheduler=mock_scheduler,
+        logger=mock_logger,
+        vfs=MagicMock(),
+        lock_manager=MagicMock(),
+    )
+
+
+class TestSimulationEngineTick:
+    """Tests the Phase 1, Phase 2, Phase 3, and return rules of the tick() method."""
+
+    def test_tick_phase1_arrivals_enqueues_correct_agents(
+        self,
+        engine,
+        mock_scheduler,
+        mock_logger,
+        mock_agent_factory,
+        mock_event_factory,
+    ):
+        """Standard Case: Agents arriving at the current clock get enqueued and logged."""
+        engine.clock = 5
+        agent1 = mock_agent_factory("agent_1", arrival_time=5, state=AgentState.NEW)
+        agent2 = mock_agent_factory("agent_2", arrival_time=10, state=AgentState.NEW)
+        engine.agents = [agent1, agent2]
+
+        engine.tick()
+
+        # Check Phase 1 operations for the arrived agent
+        assert agent1.state == AgentState.READY
+        mock_scheduler.enqueue_ready_agent.assert_called_once_with(agent1)
+
+        # Verify the arrival event was logged
+        dummy_event = mock_event_factory(
+            time=5, event_type=EventType.AGENT_ARRIVED, agent_id="agent_1"
+        )
+        mock_logger.log.assert_called_with(dummy_event)
+
+        # The future agent should be ignored this tick
+        assert agent2.state == AgentState.NEW
+
+    def test_tick_phase2_scheduling_assigns_slots_and_logs(
+        self,
+        engine,
+        mock_scheduler,
+        mock_logger,
+        mock_agent_factory,
+        mock_slot_factory,
+        mock_event_factory,
+    ):
+        """Standard Case: newlyAssigned agents have their intervals updated on the slot."""
+        engine.clock = 2
+
+        # Setup newly assigned pair
+        mock_agent = mock_agent_factory("agent_X", arrival_time=0)
+        mock_slot = mock_slot_factory(slot_id=0, current_agent=mock_agent)
+
+        # scheduleNext returns the newly assigned tuple based on prompt design constraints
+        mock_scheduler.scheduleNext.return_value = [(mock_slot, mock_agent)]
+
+        engine.tick()
+
+        # Slot metrics should be finalized for prior state and opened for new agent
+        mock_slot.closeCurrentInterval.assert_called_once_with(engine.clock)
+        mock_slot.openNewInterval.assert_called_once_with(engine.clock, "agent_X")
+
+        # Must log the slot assignment
+        dummy_event = mock_event_factory(
+            time=5, event_type=EventType.AGENT_ARRIVED, agent_id="agent_1"
+        )
+        mock_logger.log.assert_called_with(dummy_event)
+
+    def test_tick_phase3_execution_advances_only_existing_running_agents(
+        self, engine, mock_scheduler, mock_agent_factory, mock_slot_factory
+    ):
+        """Standard Case: Slots occupied BEFORE phase 2 advance. newlyAssigned slots wait until next tick."""
+        engine.clock = 10
+        engine.handle = MagicMock()  # Mock internal handler
+
+        existing_agent = mock_agent_factory("agent_EXISTING", arrival_time=0)
+        new_agent = mock_agent_factory("agent_NEW", arrival_time=5)
+
+        existing_slot = mock_slot_factory(slot_id=0, current_agent=existing_agent)
+        new_slot = mock_slot_factory(slot_id=1, current_agent=new_agent)
+        empty_slot = mock_slot_factory(slot_id=2, current_agent=None)
+
+        mock_scheduler.slots = [existing_slot, new_slot, empty_slot]
+        mock_scheduler.scheduleNext.return_value = [(new_slot, new_agent)]
+
+        engine.tick()
+
+        # Phase 3 validations
+        existing_agent.advance.assert_called_once()
+        engine.handle.assert_called_once_with(
+            "MOCK_OUTCOME", existing_slot, engine.clock
+        )
+
+        # Edge Case: Newly assigned slot must NOT advance in the same tick it was scheduled
+        new_agent.advance.assert_not_called()
+
+    def test_tick_returns_false_if_all_agents_terminated(
+        self, engine, mock_agent_factory
+    ):
+        """Return Condition: tick() returns False immediately if all agents are TERMINATED."""
+        agent1 = mock_agent_factory("A", 0, state=AgentState.TERMINATED)
+        agent2 = mock_agent_factory("B", 0, state=AgentState.TERMINATED)
+        engine.agents = [agent1, agent2]
+
+        result = engine.tick()
+
+        assert result is False
+
+    def test_tick_returns_true_if_agents_still_active(self, engine, mock_agent_factory):
+        """Return Condition: tick() returns True if ANY agent is not TERMINATED."""
+        agent1 = mock_agent_factory("A", 0, state=AgentState.TERMINATED)
+        agent2 = mock_agent_factory("B", 0, state=AgentState.RUNNING)
+        engine.agents = [agent1, agent2]
+
+        result = engine.tick()
+
+        assert result is True
+
+
+class TestSimulationEngineRun:
+    """Tests the primary run loop of the SimulationEngine."""
+
+    def test_run_loops_until_tick_returns_false(self, engine):
+        """Standard Case: run() executes a loop that stops exactly when tick() returns False."""
+        # Setup tick to return True twice, then False
+        engine.tick = MagicMock(side_effect=[True, True, False])
+
+        engine.run()
+
+        # Validates the loop broke at the correct moment
+        assert engine.tick.call_count == 3
