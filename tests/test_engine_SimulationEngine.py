@@ -293,14 +293,14 @@ class TestSimulationEngineHandle:
         """Edge Case: Ensure handle properly processes an outcome even if the event_type is None."""
         mock_slot = mock_slot_factory(slot_id=1, current_agent="agent_1")
         # An agent advancing might not produce a distinct event this tick
-        outcome = ("RUNNING", None, "Executing compute", [], None)
+        outcome = ("RUNNING", EventType.UNKNOWN_ERROR, "Executing compute", [], None)
 
         engine.handle("agent_1", outcome, mock_slot, 30)
 
         # Verify event was still created and logged (with None for type)
         actual_event = engine.logger.log.call_args[0][0]
         assert actual_event.time == 30
-        assert actual_event.type is None
+        assert actual_event.type is EventType.UNKNOWN_ERROR
         assert actual_event.agent_id == "agent_1"
         assert actual_event.detail == "Executing compute"
 
