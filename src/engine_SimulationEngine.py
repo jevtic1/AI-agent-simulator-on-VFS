@@ -69,8 +69,26 @@ class SimulationEngine:
         return True
 
     def handle(self, agent, outcome, slot, clock):
-        """Internal handler for processing the result of an agent's advance() step."""
-        pass
+        # 1. Unpack the outcome tuple
+        status, event_type, detail, related_agent_ids, path = outcome
+
+        # Accommodate both string ID and Agent object based on the test variations
+        agent_id = agent if isinstance(agent, str) else agent.id
+
+        # 2. Create and log the event
+        event = Event(
+            time=clock,
+            type=event_type,
+            agent_id=agent_id,
+            detail=detail,
+            related_agent_ids=related_agent_ids,
+            path=path,
+        )
+        self.logger.log(event)
+
+        # 3. Release the slot if the agent is no longer running actively
+        if status in ("TERMINATED", "BLOCKED"):
+            slot.currentAgent = None
 
     def run(self):
         """Primary execution loop that runs until tick() evaluates to False."""
