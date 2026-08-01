@@ -64,8 +64,13 @@ class TestEventLogger:
             123,
             {"time": 0, "type": "AGENT_ARRIVED", "agent_id": "agent_1"},
             [
-                Event(
-                    time=0, type=EventType.AGENT_ARRIVED, agent_id="agent_1", detail=""
+                MagicMock(
+                    specs=Event,
+                    __class__=Event,
+                    time=0,
+                    type=EventType.AGENT_ARRIVED,
+                    agent_id="agent_1",
+                    detail="",
                 )
             ],
         ],
