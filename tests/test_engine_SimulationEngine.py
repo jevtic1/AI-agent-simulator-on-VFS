@@ -178,7 +178,7 @@ class TestSimulationEngineTick:
         # Phase 3 validations
         existing_agent.advance.assert_called_once()
         engine.handle.assert_called_once_with(
-            "MOCK_OUTCOME", existing_slot, engine.clock - 1
+            "agent_EXISTING", "MOCK_OUTCOME", existing_slot, engine.clock - 1
         )
 
         # Edge Case: Newly assigned slot must NOT advance in the same tick it was scheduled
