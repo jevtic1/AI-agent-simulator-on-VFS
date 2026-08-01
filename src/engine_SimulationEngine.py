@@ -59,15 +59,16 @@ class SimulationEngine:
         for slot in self.scheduler.slots:
             if slot.currentAgent is not None:
                 # Newly assigned agents in Phase 2 must NOT advance in the same tick
-                if slot.currentAgent.id not in newly_assigned_agents:
+                agent = slot.currentAgent
+                if agent.id not in newly_assigned_agents:
                     # Existing agents are advanced
                     outcome = slot.currentAgent.advance(self.vfs, self.lock_manager)
-                    self.handle(outcome, slot, self.clock)
+                    self.handle(agent.id, outcome, slot, self.clock)
 
         self.clock += 1
         return True
 
-    def handle(self, outcome, slot, clock):
+    def handle(self, agent_id, outcome, slot, clock):
         """Internal handler for processing the result of an agent's advance() step."""
         pass
 
