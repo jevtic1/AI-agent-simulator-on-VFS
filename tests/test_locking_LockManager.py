@@ -1,22 +1,22 @@
+from unittest.mock import MagicMock
+
 import pytest
 
 from locking_Lock import Lock
 from locking_LockManager import LockManager
 from locking_WaitForGraph import WaitForGraph
-from models_Agent import Agent, AgentState
+from models_Agent import AgentState
 
 
-def create_test_agent(agent_id: str) -> Agent:
-    """Helper to instantiate an Agent in the RUNNING state for testing."""
-    agent = Agent(
-        id=agent_id,
-        priority=1,
-        arrival_time=0,
-        operations=[],
-    )
-    # Fast-forward state to RUNNING to allow valid transitions to BLOCKED
-    agent.state = AgentState.READY
+def create_mock_agent(agent_id: str) -> MagicMock:
+    """Helper to instantiate a mocked Agent in the RUNNING state for testing."""
+    agent = MagicMock()
+    agent.id = agent_id
     agent.state = AgentState.RUNNING
+
+    # Required for set operations and equality checks in LockManager
+    agent.__hash__ = lambda self: hash(agent_id)
+    agent.__eq__ = lambda self, other: hasattr(other, "id") and self.id == other.id
     return agent
 
 
@@ -44,7 +44,7 @@ class TestLockManagerAcquire:
         self, empty_lock_manager, mode, expected_type
     ):
         """Standard Case: Acquiring a non-existent lock creates it, sets correct type, and adds holder."""
-        agent = create_test_agent("A1")
+        agent = create_mock_agent("A1")
         path = "/data/file1"
 
         granted, waiting_on, cycle = empty_lock_manager.acquire(agent, path, mode)
@@ -65,8 +65,8 @@ class TestLockManagerAcquire:
 
     def test_acquire_existing_shared_lock_with_read(self, empty_lock_manager):
         """Standard Case: Read requests on an existing shared lock are granted immediately."""
-        agent1 = create_test_agent("A1")
-        agent2 = create_test_agent("A2")
+        agent1 = create_mock_agent("A1")
+        agent2 = create_mock_agent("A2")
         path = "/data/file1"
 
         # Agent 1 takes shared lock
@@ -91,9 +91,9 @@ class TestLockManagerAcquire:
         self, empty_lock_manager, mode
     ):
         """Standard Case: Write/append requests on a shared lock fail, block the agent, queue it, and add graph edges."""
-        agent1 = create_test_agent("A1")
-        agent2 = create_test_agent("A2")
-        agent3 = create_test_agent("A3")
+        agent1 = create_mock_agent("A1")
+        agent2 = create_mock_agent("A2")
+        agent3 = create_mock_agent("A3")
         path = "/data/file1"
 
         empty_lock_manager.acquire(agent1, path, "read")
@@ -129,8 +129,8 @@ class TestLockManagerAcquire:
     @pytest.mark.parametrize("mode", ["read", "write", "append"])
     def test_acquire_existing_exclusive_lock_blocks_all(self, empty_lock_manager, mode):
         """Standard Case: Any request on an exclusive lock fails, blocks the agent, queues it, and adds a graph edge."""
-        agent1 = create_test_agent("A1")
-        agent2 = create_test_agent("A2")
+        agent1 = create_mock_agent("A1")
+        agent2 = create_mock_agent("A2")
         path = "/data/file1"
 
         empty_lock_manager.acquire(agent1, path, "write")
@@ -156,14 +156,14 @@ class TestLockManagerAcquire:
 
     def test_acquire_invalid_mode_raises_error(self, empty_lock_manager):
         """Edge Case: Acquiring with an invalid mode should raise a ValueError."""
-        agent = create_test_agent("A1")
+        agent = create_mock_agent("A1")
         with pytest.raises(ValueError):
             empty_lock_manager.acquire(agent, "/data/file1", "delete")
 
     def test_acquire_deadlock_detected(self, empty_lock_manager):
         """Edge Case: Acquiring a lock that forms a wait cycle must be rejected completely without blocking."""
-        agent1 = create_test_agent("A1")
-        agent2 = create_test_agent("A2")
+        agent1 = create_mock_agent("A1")
+        agent2 = create_mock_agent("A2")
         path1 = "/data/file1"
         path2 = "/data/file2"
 
@@ -201,9 +201,9 @@ class TestLockManagerAcquire:
 class TestLockManagerRelease:
     def test_release_shared_lock_partial(self, empty_lock_manager):
         """Standard Case: Releasing a shared lock with multiple holders just removes the releasing agent."""
-        agent1 = create_test_agent("A1")
-        agent2 = create_test_agent("A2")
-        agent3 = create_test_agent("A3")
+        agent1 = create_mock_agent("A1")
+        agent2 = create_mock_agent("A2")
+        agent3 = create_mock_agent("A3")
         path = "/data/file1"
 
         # Setup: A1 and A2 hold read, A3 is waiting for write[cite: 11]
@@ -232,9 +232,9 @@ class TestLockManagerRelease:
         self, empty_lock_manager
     ):
         """Standard Case: Releasing the last holder wakes waiters, deletes lock, and purges wait-edges."""
-        agent1 = create_test_agent("A1")
-        agent2 = create_test_agent("A2")
-        agent3 = create_test_agent("A3")
+        agent1 = create_mock_agent("A1")
+        agent2 = create_mock_agent("A2")
+        agent3 = create_mock_agent("A3")
         path = "/data/file1"
 
         # Setup: A1 holds write, A2 and A3 are waiting[cite: 11]
@@ -268,15 +268,15 @@ class TestLockManagerRelease:
 
     def test_release_non_existent_lock(self, empty_lock_manager):
         """Edge Case: Releasing a lock that does not exist should be handled gracefully."""
-        agent = create_test_agent("A1")
+        agent = create_mock_agent("A1")
         # Should not raise an exception or crash
         woken_agents = empty_lock_manager.release(agent, "/data/ghost_file")
         assert woken_agents == []
 
     def test_release_agent_not_in_holders(self, empty_lock_manager):
         """Edge Case: Releasing an agent that doesn't actually hold the lock."""
-        agent1 = create_test_agent("A1")
-        agent2 = create_test_agent("A2")
+        agent1 = create_mock_agent("A1")
+        agent2 = create_mock_agent("A2")
         path = "/data/file1"
 
         empty_lock_manager.acquire(agent1, path, "read")
