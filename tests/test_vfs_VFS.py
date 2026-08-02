@@ -1,8 +1,8 @@
 import pytest
-from src.vfs_VFS import VFS
 
 from src.vfs_Mount import Mount
 from src.vfs_VFile import VFile
+from src.vfs_VFS import VFS
 
 
 @pytest.fixture
@@ -18,6 +18,20 @@ def physical_fs(tmp_path):
     empty_dir.mkdir()
 
     return tmp_path
+
+
+@pytest.fixture
+def mock_vfile_factory():
+    def _create_vfile(path, content, mode):
+        mocked_vfile = MagicMock(spec=VFile)
+
+        mocked_vfile.path = path
+        mocked_vfile.content = content
+        mocked_vfile.mode = mode
+
+        return mocked_vfile
+
+    return _create_vfile
 
 
 @pytest.fixture
@@ -115,7 +129,7 @@ class TestVFS:
         with pytest.raises((ValueError, FileNotFoundError)):
             populated_vfs.resolve("work/a.txt")
 
-    def test_in_memory_isolation(self, vfs, physical_fs):
+    def test_in_memory_isolation(self, vfs, physical_fs, mock_vfile_factory):
         src = physical_fs / "real.txt"
         src.write_text("original content")
 
@@ -126,7 +140,7 @@ class TestVFS:
             vfile.content = "modified content"
         except Exception:
             idx = vfs.files.index(vfile)
-            vfs.files[idx] = VFile(
+            vfs.files[idx] = mock_vfile_factory(
                 path=vfile.path, content="modified content", mode=vfile.mode
             )
 
