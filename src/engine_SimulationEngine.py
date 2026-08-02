@@ -1,12 +1,12 @@
 import sys
 
-from logger_Event import Event, EventType
-from logger_EventLogger import EventLogger
-from locking_LockManager import LockManager
-from models_Agent import AgentState
-from scheduler_Scheduler import Scheduler
-from util_Parser import Parser
-from vfs_VFS import VFS
+from src.locking_LockManager import LockManager
+from src.logger_Event import Event, EventType
+from src.logger_EventLogger import EventLogger
+from src.models_Agent import AgentState
+from src.scheduler_Scheduler import Scheduler
+from src.util_Parser import Parser
+from src.vfs_VFS import VFS
 
 
 class SimulationEngine:
@@ -47,7 +47,11 @@ class SimulationEngine:
         new_assignments = self.scheduler.scheduleNext()
         newly_assigned_agents = set()
 
-        for slot, agent in new_assignments:
+        for agent, slot, is_preemptible in new_assignments:
+            # Look up the actual Slot and Agent objects by ID
+            slot = next((s for s in self.scheduler.slots if s.id == slot.id), None)
+            agent = next((a for a in self.agents if a.id == agent.id), None)
+
             slot.closeCurrentInterval(self.clock)
             slot.openNewInterval(self.clock, agent.id)
 
@@ -75,6 +79,10 @@ class SimulationEngine:
 
     def handle(self, agent, outcome, slot, clock):
         # 1. Unpack outcome tuple
+        if outcome is None:
+            print("VRACEN NONE! POPRAVI")
+            return
+
         status, event_type, detail, related_agent_ids, path = outcome
         agent_id = agent if isinstance(agent, str) else agent.id
 
@@ -135,3 +143,11 @@ class SimulationEngine:
         # 8 & 9. Output report and terminate program
         logger.printReport()
         sys.exit(0)
+
+
+if __name__ == "__main__":
+    # Standard CLI usage: python engine_SimulationEngine.py path/to/config.json
+    # Fallback usage (Double-click): defaults to "config.json" in the same directory
+    config_file = sys.argv[1] if len(sys.argv) > 1 else "config.json"
+
+    SimulationEngine.run(config_file)
