@@ -1,6 +1,8 @@
-import pytest
 import dataclasses
-from locking_Lock import Lock
+
+import pytest
+
+from src.locking_Lock import Lock
 
 
 class TestLockInitialization:

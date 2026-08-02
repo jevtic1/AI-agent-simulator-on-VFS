@@ -1,7 +1,8 @@
 from dataclasses import FrozenInstanceError
 
 import pytest
-from locking_WaitForGraph import Edge, WaitForGraph
+
+from src.locking_WaitForGraph import Edge, WaitForGraph
 
 
 class TestEdge:

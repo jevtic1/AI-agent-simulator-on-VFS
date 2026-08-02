@@ -1,5 +1,6 @@
 import pytest
-from locking_LockRequest import LockRequest
+
+from src.locking_LockRequest import LockRequest
 
 
 class TestLockRequestInitialization:

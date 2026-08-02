@@ -1,7 +1,8 @@
-from typing import Tuple, List
-from locking_Lock import Lock
-from locking_WaitForGraph import WaitForGraph
-from models_Agent import Agent, AgentState
+from typing import List, Tuple
+
+from src.locking_Lock import Lock
+from src.locking_WaitForGraph import WaitForGraph
+from src.models_Agent import Agent, AgentState
 
 
 class LockManager:

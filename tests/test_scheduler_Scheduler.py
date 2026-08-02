@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from models_Agent import Agent, AgentState
-from scheduler_Scheduler import Scheduler
+from src.models_Agent import Agent, AgentState
+from src.scheduler_Scheduler import Scheduler
 
 
 @pytest.fixture

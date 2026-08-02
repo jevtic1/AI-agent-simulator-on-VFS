@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import Tuple, List, Any
+from typing import Any, List, Tuple
 
-from logger_Event import EventType
-from models_Agent import Agent, AgentState
-from vfs_FileHandle import FileHandle
+from src.logger_Event import EventType
+from src.models_Agent import Agent, AgentState
+from src.vfs_FileHandle import FileHandle
 
 
 class Operation(ABC):

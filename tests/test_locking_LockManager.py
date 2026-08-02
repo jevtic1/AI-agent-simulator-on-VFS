@@ -2,10 +2,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from locking_Lock import Lock
-from locking_LockManager import LockManager
-from locking_WaitForGraph import WaitForGraph
-from models_Agent import AgentState
+from src.locking_Lock import Lock
+from src.locking_LockManager import LockManager
+from src.locking_WaitForGraph import WaitForGraph
+from src.models_Agent import AgentState
 
 
 def create_mock_agent(agent_id: str) -> MagicMock:

@@ -2,9 +2,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from logger_Event import EventType
-from models_Agent import Agent, AgentState
-from models_Operations import (
+from src.logger_Event import EventType
+from src.models_Agent import Agent, AgentState
+from src.models_Operations import (
     AppendOp,
     CloseOp,
     OpenOp,
@@ -13,11 +13,11 @@ from models_Operations import (
     ThinkOp,
     WriteOp,
 )
-from vfs_FileHandle import FileHandle
-from vfs_VFile import VFile
+from src.vfs_FileHandle import FileHandle
+from src.vfs_VFile import VFile
 
 # Concrete Implementations
-from vfs_VFS import VFS
+from src.vfs_VFS import VFS
 
 
 @pytest.fixture
