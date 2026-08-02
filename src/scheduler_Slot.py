@@ -71,6 +71,6 @@ class Slot:
             raise TypeError("clock must be an integer.")
 
         if not self.history:
-            raise IndexError("Cannot close interval on empty history.")
+            return
 
         self.history[-1].endTime = clock
