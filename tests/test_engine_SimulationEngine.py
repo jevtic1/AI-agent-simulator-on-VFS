@@ -3,9 +3,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Dependencies based on provided system specifications
-from engine_SimulationEngine import SimulationEngine
-from logger_Event import Event, EventType
-from models_Agent import Agent, AgentState
+from src.engine_SimulationEngine import SimulationEngine
+from src.logger_Event import Event, EventType
+from src.models_Agent import Agent, AgentState
 
 
 @pytest.fixture
