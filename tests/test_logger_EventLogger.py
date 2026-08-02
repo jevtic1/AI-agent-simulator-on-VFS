@@ -13,7 +13,7 @@ def logger():
 
 @pytest.fixture
 def event_arrival():
-    mock_event = MagicMock(specs=Event)
+    mock_event = MagicMock(spec=Event)
     mock_event.__class__ = Event
     mock_event.time = 3
     mock_event.type = EventType.AGENT_ARRIVED
@@ -65,7 +65,7 @@ class TestEventLogger:
             {"time": 0, "type": "AGENT_ARRIVED", "agent_id": "agent_1"},
             [
                 MagicMock(
-                    specs=Event,
+                    spec=Event,
                     __class__=Event,
                     time=0,
                     type=EventType.AGENT_ARRIVED,
