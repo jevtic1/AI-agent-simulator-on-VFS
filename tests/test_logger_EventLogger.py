@@ -1,7 +1,9 @@
+from unittest.mock import MagicMock
+
 import pytest
-from src.logger_EventLogger import EventLogger
 
 from src.logger_Event import Event, EventType
+from src.logger_EventLogger import EventLogger
 
 
 @pytest.fixture
@@ -11,23 +13,25 @@ def logger():
 
 @pytest.fixture
 def event_arrival():
-    return Event(
-        time=0,
-        type=EventType.AGENT_ARRIVED,
-        agent_id="agent_1",
-        detail="Agent arrived at system.",
-    )
+    mock_event = MagicMock(spec=Event)
+    mock_event.__class__ = Event
+    mock_event.time = 3
+    mock_event.type = EventType.AGENT_ARRIVED
+    mock_event.agent_id = "agent_1"
+    mock_event.detail = "Mock detail."
+    mock_event.path = "/mnt/data/file.txt"
+    return mock_event
 
 
 @pytest.fixture
 def event_done():
-    return Event(
-        time=10,
-        type=EventType.OPERATION_DONE,
-        agent_id="agent_1",
-        detail="ReadOp finished.",
-        path="/mnt/data/file.txt",
-    )
+    mock_event = MagicMock(spec=Event)
+    mock_event.__class__ = Event
+    mock_event.time = 3
+    mock_event.type = EventType.OPERATION_DONE
+    mock_event.agent_id = "agent_1"
+    mock_event.detail = "Mock detail."
+    return mock_event
 
 
 class TestEventLogger:
@@ -60,8 +64,13 @@ class TestEventLogger:
             123,
             {"time": 0, "type": "AGENT_ARRIVED", "agent_id": "agent_1"},
             [
-                Event(
-                    time=0, type=EventType.AGENT_ARRIVED, agent_id="agent_1", detail=""
+                MagicMock(
+                    spec=Event,
+                    __class__=Event,
+                    time=0,
+                    type=EventType.AGENT_ARRIVED,
+                    agent_id="agent_1",
+                    detail="",
                 )
             ],
         ],
@@ -87,7 +96,7 @@ class TestEventLogger:
         assert "agent_1" in captured.out
         assert "AGENT_ARRIVED" in captured.out
         assert "OPERATION_DONE" in captured.out
-        assert "ReadOp finished." in captured.out
+        assert "Mock detail." in captured.out
         assert "/mnt/data/file.txt" in captured.out
         assert captured.err == ""
 

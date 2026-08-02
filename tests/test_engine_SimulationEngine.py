@@ -51,7 +51,7 @@ def mock_logger():
 
 
 @pytest.fixture
-def mock_agent_factory():
+def mock_agent():
     """Helper fixture to create mocked Agents."""
 
     def _create_agent(agent_id, arrival_time, state=AgentState.NEW):
@@ -101,13 +101,13 @@ class TestSimulationEngineTick:
         engine,
         mock_scheduler,
         mock_logger,
-        mock_agent_factory,
+        mock_agent,
         mock_event_factory,
     ):
         """Standard Case: Agents arriving at the current clock get enqueued and logged."""
         engine.clock = 5
-        agent1 = mock_agent_factory("agent_1", arrival_time=5, state=AgentState.NEW)
-        agent2 = mock_agent_factory("agent_2", arrival_time=10, state=AgentState.NEW)
+        agent1 = mock_agent("agent_1", arrival_time=5, state=AgentState.NEW)
+        agent2 = mock_agent("agent_2", arrival_time=10, state=AgentState.NEW)
         engine.agents = [agent1, agent2]
 
         engine.tick()
@@ -130,7 +130,7 @@ class TestSimulationEngineTick:
         engine,
         mock_scheduler,
         mock_logger,
-        mock_agent_factory,
+        mock_agent,
         mock_slot_factory,
         mock_event_factory,
     ):
@@ -138,7 +138,7 @@ class TestSimulationEngineTick:
         engine.clock = 5
 
         # Setup newly assigned pair
-        mock_agent = mock_agent_factory("agent_X", arrival_time=0)
+        mock_agent = mock_agent("agent_X", arrival_time=0)
         mock_slot = mock_slot_factory(slot_id=0, current_agent=mock_agent)
 
         # scheduleNext returns the newly assigned tuple based on prompt design constraints
@@ -157,14 +157,14 @@ class TestSimulationEngineTick:
         assert actual_event.agent_id == "agent_X"
 
     def test_tick_phase3_execution_advances_only_existing_running_agents(
-        self, engine, mock_scheduler, mock_agent_factory, mock_slot_factory
+        self, engine, mock_scheduler, mock_agent, mock_slot_factory
     ):
         """Standard Case: Slots occupied BEFORE phase 2 advance. newlyAssigned slots wait until next tick."""
         engine.clock = 10
         engine.handle = MagicMock()  # Mock internal handler
 
-        existing_agent = mock_agent_factory("agent_EXISTING", arrival_time=0)
-        new_agent = mock_agent_factory("agent_NEW", arrival_time=5)
+        existing_agent = mock_agent("agent_EXISTING", arrival_time=0)
+        new_agent = mock_agent("agent_NEW", arrival_time=5)
 
         existing_slot = mock_slot_factory(slot_id=0, current_agent=existing_agent)
         new_slot = mock_slot_factory(slot_id=1, current_agent=new_agent)
@@ -184,22 +184,20 @@ class TestSimulationEngineTick:
         # Edge Case: Newly assigned slot must NOT advance in the same tick it was scheduled
         new_agent.advance.assert_not_called()
 
-    def test_tick_returns_false_if_all_agents_terminated(
-        self, engine, mock_agent_factory
-    ):
+    def test_tick_returns_false_if_all_agents_terminated(self, engine, mock_agent):
         """Return Condition: tick() returns False immediately if all agents are TERMINATED."""
-        agent1 = mock_agent_factory("A", 0, state=AgentState.TERMINATED)
-        agent2 = mock_agent_factory("B", 0, state=AgentState.TERMINATED)
+        agent1 = mock_agent("A", 0, state=AgentState.TERMINATED)
+        agent2 = mock_agent("B", 0, state=AgentState.TERMINATED)
         engine.agents = [agent1, agent2]
 
         result = engine.tick()
 
         assert result is False
 
-    def test_tick_returns_true_if_agents_still_active(self, engine, mock_agent_factory):
+    def test_tick_returns_true_if_agents_still_active(self, engine, mock_agent):
         """Return Condition: tick() returns True if ANY agent is not TERMINATED."""
-        agent1 = mock_agent_factory("A", 0, state=AgentState.TERMINATED)
-        agent2 = mock_agent_factory("B", 0, state=AgentState.RUNNING)
+        agent1 = mock_agent("A", 0, state=AgentState.TERMINATED)
+        agent2 = mock_agent("B", 0, state=AgentState.RUNNING)
         engine.agents = [agent1, agent2]
 
         result = engine.tick()
