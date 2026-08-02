@@ -145,7 +145,9 @@ class TestSimulationEngineTick:
         mock_slot = mock_slot_factory(slot_id=0, current_agent=mock_agent_instance)
 
         # scheduleNext returns the newly assigned tuple based on prompt design constraints
-        mock_scheduler.scheduleNext.return_value = [(mock_slot, mock_agent_instance)]
+        mock_scheduler.scheduleNext.return_value = [
+            (mock_agent_instance, mock_slot, False)
+        ]
 
         engine.tick()
 
@@ -174,7 +176,7 @@ class TestSimulationEngineTick:
         empty_slot = mock_slot_factory(slot_id=2, current_agent=None)
 
         mock_scheduler.slots = [existing_slot, new_slot, empty_slot]
-        mock_scheduler.scheduleNext.return_value = [(new_slot, new_agent)]
+        mock_scheduler.scheduleNext.return_value = [(new_agent, new_slot, False)]
 
         engine.tick()
 
