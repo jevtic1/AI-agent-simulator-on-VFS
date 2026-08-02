@@ -1,5 +1,12 @@
+import sys
+
 from logger_Event import Event, EventType
+from logger_EventLogger import EventLogger
+from locking_LockManager import LockManager
 from models_Agent import AgentState
+from scheduler_Scheduler import Scheduler
+from util_Parser import Parser
+from vfs_VFS import VFS
 
 
 class SimulationEngine:
@@ -27,7 +34,7 @@ class SimulationEngine:
                 agent.state = AgentState.READY
                 self.scheduler.enqueue_ready_agent(agent)
 
-                # Log the arrival - detail argument added to satisfy the constructor
+                # Log the arrival
                 event = Event(
                     time=self.clock,
                     type=EventType.AGENT_ARRIVED,
@@ -44,7 +51,7 @@ class SimulationEngine:
             slot.closeCurrentInterval(self.clock)
             slot.openNewInterval(self.clock, agent.id)
 
-            # Log the assignment scheduling - detail argument added to satisfy the constructor
+            # Log the assignment
             event = Event(
                 time=self.clock,
                 type=EventType.SLOT_ASSIGNED,
@@ -58,10 +65,8 @@ class SimulationEngine:
         # Phase 3: Execution
         for slot in self.scheduler.slots:
             if slot.currentAgent is not None:
-                # Newly assigned agents in Phase 2 must NOT advance in the same tick
                 agent = slot.currentAgent
                 if agent.id not in newly_assigned_agents:
-                    # Existing agents are advanced
                     outcome = slot.currentAgent.advance(self.vfs, self.lock_manager)
                     self.handle(agent, outcome, slot, self.clock)
 
@@ -69,13 +74,11 @@ class SimulationEngine:
         return True
 
     def handle(self, agent, outcome, slot, clock):
-        # 1. Unpack the outcome tuple
+        # 1. Unpack outcome tuple
         status, event_type, detail, related_agent_ids, path = outcome
-
-        # Accommodate both string ID and Agent object based on the test variations
         agent_id = agent if isinstance(agent, str) else agent.id
 
-        # 2. Create and log the event
+        # 2. Log event
         event = Event(
             time=clock,
             type=event_type,
@@ -86,11 +89,49 @@ class SimulationEngine:
         )
         self.logger.log(event)
 
-        # 3. Release the slot if the agent is no longer running actively
+        # 3. Release slot if agent blocked or terminated
         if status in ("TERMINATED", "BLOCKED"):
             slot.currentAgent = None
 
-    def run(self):
-        """Primary execution loop that runs until tick() evaluates to False."""
-        while self.tick():
+    @classmethod
+    def run(cls, config_path: str):
+        """Entry point: parses config, constructs environment, loops tick(), prints report, and exits."""
+        # 1. Parse JSON configuration
+        config = Parser.parse_file(config_path)
+
+        # 2. Construct VFS and mount files
+        vfs = VFS()
+        for mount in config.mounts:
+            vfs.mount(mount.source, mount.target, mount.mode)
+
+        # 3. Ensure agent initial metrics and states are set
+        for agent in config.agents:
+            agent.state = AgentState.NEW
+            agent.current_op_index = 0
+            agent.start_time = -1
+            agent.end_time = -1
+            agent.wait_time = 0
+            agent.blocked_time = 0
+            agent.preemption_count = 0
+
+        # 4 & 5. Instantiate core services
+        lock_manager = LockManager()
+        logger = EventLogger()
+        scheduler = Scheduler(config.max_running_agents)
+
+        # 6. Wire SimulationEngine
+        engine = cls(
+            agents=config.agents,
+            scheduler=scheduler,
+            logger=logger,
+            vfs=vfs,
+            lock_manager=lock_manager,
+        )
+
+        # 7. Execution loop until all agents complete
+        while engine.tick():
             pass
+
+        # 8 & 9. Output report and terminate program
+        logger.printReport()
+        sys.exit(0)
