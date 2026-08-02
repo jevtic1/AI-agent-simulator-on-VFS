@@ -100,28 +100,34 @@ class TestSimulationEngineTick:
         mock_scheduler,
         mock_logger,
         mock_agent,
-        mock_event_factory,
     ):
-        """Standard Case: Agents arriving at the current clock get enqueued and logged."""
+        """Standard Case: NEW Agents arriving at the current clock get enqueued and logged.
+        Additional Case: Agents already in READY state should also be enqueued."""
         engine.clock = 5
-        agent1 = mock_agent("agent_1", arrival_time=5, state=AgentState.NEW)
-        agent2 = mock_agent("agent_2", arrival_time=10, state=AgentState.NEW)
-        engine.agents = [agent1, agent2]
+        agent_arriving = mock_agent("agent_new", arrival_time=5, state=AgentState.NEW)
+        agent_future = mock_agent("agent_future", arrival_time=10, state=AgentState.NEW)
+        agent_ready = mock_agent("agent_ready", arrival_time=1, state=AgentState.READY)
+
+        engine.agents = [agent_arriving, agent_future, agent_ready]
 
         engine.tick()
 
-        # Check Phase 1 operations for the arrived agent
-        assert agent1.state == AgentState.READY
-        mock_scheduler.enqueue_ready_agent.assert_called_once_with(agent1)
+        # Check Phase 1 operations for the newly arrived agent
+        assert agent_arriving.state == AgentState.READY
 
-        # Verify the arrival event was logged
+        # Verify both the newly arrived agent and the previously READY agent are enqueued
+        assert mock_scheduler.enqueue_ready_agent.call_count == 2
+        mock_scheduler.enqueue_ready_agent.assert_any_call(agent_arriving)
+        mock_scheduler.enqueue_ready_agent.assert_any_call(agent_ready)
+
+        # Verify the arrival event was logged for the newly arrived agent
         actual_event = mock_logger.log.call_args[0][0]
         assert actual_event.time == 5
         assert actual_event.type == EventType.AGENT_ARRIVED
-        assert actual_event.agent_id == "agent_1"
+        assert actual_event.agent_id == "agent_new"
 
         # The future agent should be ignored this tick
-        assert agent2.state == AgentState.NEW
+        assert agent_future.state == AgentState.NEW
 
     def test_tick_phase2_scheduling_assigns_slots_and_logs(
         self,
@@ -130,7 +136,6 @@ class TestSimulationEngineTick:
         mock_logger,
         mock_agent,
         mock_slot_factory,
-        mock_event_factory,
     ):
         """Standard Case: newlyAssigned agents have their intervals updated on the slot."""
         engine.clock = 5
@@ -207,10 +212,13 @@ class TestSimulationEngineHandle:
     """Tests the handle() method of SimulationEngine."""
 
     def test_handle_logs_event_and_keeps_slot_on_success(
-        self, engine, mock_slot_factory
+        self, engine, mock_slot_factory, mock_agent
     ):
         """Standard Case: A successful/pending agent execution logs an event but remains in the slot."""
-        mock_slot = mock_slot_factory(slot_id=1, current_agent="agent_1")
+        mock_agent_instance = mock_agent(
+            "agent_1", arrival_time=0, state=AgentState.RUNNING
+        )
+        mock_slot = mock_slot_factory(slot_id=1, current_agent=mock_agent_instance)
         # outcome tuple structure: (status, event_type, detail, related_agent_ids, path)
         outcome = (
             "SUCCESS",
@@ -220,7 +228,7 @@ class TestSimulationEngineHandle:
             None,
         )
 
-        engine.handle("agent_1", outcome, mock_slot, 15)
+        engine.handle(mock_agent_instance, outcome, mock_slot, 15)
 
         # Verify the event was correctly parsed and logged
         actual_event = engine.logger.log.call_args[0][0]
@@ -232,13 +240,16 @@ class TestSimulationEngineHandle:
         assert actual_event.path is None
 
         # Verify the slot was NOT released
-        assert mock_slot.currentAgent == "agent_1"
+        assert mock_slot.currentAgent == mock_agent_instance
 
-    def test_handle_logs_event_and_releases_slot_on_terminated(
-        self, engine, mock_slot_factory
+    def test_handle_removes_agent_from_slot_if_state_is_terminated(
+        self, engine, mock_slot_factory, mock_agent
     ):
-        """Standard Case: If an agent's outcome status is TERMINATED, the slot must be released."""
-        mock_slot = mock_slot_factory(slot_id=1, current_agent="agent_1")
+        """Standard Case: If an agent's state is TERMINATED, the slot must be released and event logged."""
+        mock_agent_instance = mock_agent(
+            "agent_1", arrival_time=0, state=AgentState.TERMINATED
+        )
+        mock_slot = mock_slot_factory(slot_id=1, current_agent=mock_agent_instance)
         outcome = (
             "TERMINATED",
             EventType.AGENT_TERMINATED,
@@ -247,22 +258,25 @@ class TestSimulationEngineHandle:
             None,
         )
 
-        engine.handle("agent_1", outcome, mock_slot, 20)
+        engine.handle(mock_agent_instance, outcome, mock_slot, 20)
 
-        # Verify the completion event was logged
+        # Verify the completion event was logged since EventType is not None
         actual_event = engine.logger.log.call_args[0][0]
         assert actual_event.time == 20
         assert actual_event.type == EventType.AGENT_TERMINATED
         assert actual_event.agent_id == "agent_1"
 
-        # Verify the slot WAS released
+        # Verify the slot WAS released because the state is TERMINATED
         assert mock_slot.currentAgent is None
 
     def test_handle_logs_event_and_releases_slot_on_blocked(
-        self, engine, mock_slot_factory
+        self, engine, mock_slot_factory, mock_agent
     ):
-        """Standard Case: If an agent's outcome status is BLOCKED, the slot must be released."""
-        mock_slot = mock_slot_factory(slot_id=1, current_agent="agent_1")
+        """Standard Case: If an agent is BLOCKED, the slot must be released."""
+        mock_agent_instance = mock_agent(
+            "agent_1", arrival_time=0, state=AgentState.BLOCKED
+        )
+        mock_slot = mock_slot_factory(slot_id=1, current_agent=mock_agent_instance)
         outcome = (
             "BLOCKED",
             EventType.OPEN_BLOCKED,
@@ -271,7 +285,7 @@ class TestSimulationEngineHandle:
             "/tmp/lock",
         )
 
-        engine.handle("agent_1", outcome, mock_slot, 25)
+        engine.handle(mock_agent_instance, outcome, mock_slot, 25)
 
         # Verify the blocking event was logged
         actual_event = engine.logger.log.call_args[0][0]
@@ -285,34 +299,35 @@ class TestSimulationEngineHandle:
         # Verify the slot WAS released
         assert mock_slot.currentAgent is None
 
-    def test_handle_edge_case_ignores_none_event_type(self, engine, mock_slot_factory):
-        """Edge Case: Ensure handle properly processes an outcome even if the event_type is None."""
-        mock_slot = mock_slot_factory(slot_id=1, current_agent="agent_1")
-        # An agent advancing might not produce a distinct event this tick
-        outcome = ("RUNNING", EventType.UNKNOWN_ERROR, "Executing compute", [], None)
+    def test_handle_does_not_log_if_outcome_type_is_none(
+        self, engine, mock_slot_factory, mock_agent
+    ):
+        """Edge Case: Ensure handle does not log an event if the event_type (second item) is None."""
+        mock_agent_instance = mock_agent(
+            "agent_1", arrival_time=0, state=AgentState.RUNNING
+        )
+        mock_slot = mock_slot_factory(slot_id=1, current_agent=mock_agent_instance)
+        # outcome tuple structure: (status, event_type, detail, related_agent_ids, path)
+        outcome = ("RUNNING", None, "Executing compute", [], None)
 
-        engine.handle("agent_1", outcome, mock_slot, 30)
+        engine.handle(mock_agent_instance, outcome, mock_slot, 30)
 
-        # Verify event was still created and logged (with None for type)
-        actual_event = engine.logger.log.call_args[0][0]
-        assert actual_event.time == 30
-        assert actual_event.type is EventType.UNKNOWN_ERROR
-        assert actual_event.agent_id == "agent_1"
-        assert actual_event.detail == "Executing compute"
+        # Verify event logger was NOT called since EventType is None
+        engine.logger.log.assert_not_called()
 
         # Verify the slot was NOT released
-        assert mock_slot.currentAgent == "agent_1"
+        assert mock_slot.currentAgent == mock_agent_instance
 
 
 class TestSimulationEngineRunMethod:
     """Tests the full run() entry point of the SimulationEngine using the Parser class."""
 
     @patch("sys.exit")
-    @patch("engine_SimulationEngine.EventLogger")
-    @patch("engine_SimulationEngine.LockManager")
-    @patch("engine_SimulationEngine.Scheduler")
-    @patch("engine_SimulationEngine.VFS")
-    @patch("engine_SimulationEngine.Parser")
+    @patch("src.engine_SimulationEngine.EventLogger")
+    @patch("src.engine_SimulationEngine.LockManager")
+    @patch("src.engine_SimulationEngine.Scheduler")
+    @patch("src.engine_SimulationEngine.VFS")
+    @patch("src.engine_SimulationEngine.Parser")
     def test_run_initializes_and_executes_simulation_successfully(
         self,
         mock_parser_cls,
@@ -393,11 +408,11 @@ class TestSimulationEngineRunMethod:
             mock_sys_exit.assert_called_once_with(0)
 
     @patch("sys.exit")
-    @patch("engine_SimulationEngine.EventLogger")
-    @patch("engine_SimulationEngine.LockManager")
-    @patch("engine_SimulationEngine.Scheduler")
-    @patch("engine_SimulationEngine.VFS")
-    @patch("engine_SimulationEngine.Parser")
+    @patch("src.engine_SimulationEngine.EventLogger")
+    @patch("src.engine_SimulationEngine.LockManager")
+    @patch("src.engine_SimulationEngine.Scheduler")
+    @patch("src.engine_SimulationEngine.VFS")
+    @patch("src.engine_SimulationEngine.Parser")
     def test_run_terminates_gracefully_with_empty_config(
         self,
         mock_parser_cls,
