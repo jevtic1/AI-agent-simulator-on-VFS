@@ -1,4 +1,5 @@
 from queue import PriorityQueue
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -6,22 +7,27 @@ from models_Agent import Agent, AgentState
 from scheduler_Scheduler import Scheduler
 
 
-def create_test_agent(
-    agent_id: str,
-    priority: int,
-    state: AgentState = AgentState.READY,
-    preemption_count: int = 0,
-) -> Agent:
-    """Helper to instantiate a concrete Agent with given attributes."""
-    agent = Agent(
-        id=agent_id,
-        priority=priority,
-        arrival_time=0,
-        operations=[],
-    )
-    agent.state = state
-    agent.preemption_count = preemption_count
-    return agent
+@pytest.fixture
+def mock_agent_factory():
+    """Helper fixture to instantiate a mocked Agent with given attributes."""
+
+    def _create_mock_agent(
+        agent_id: str,
+        priority: int,
+        state: AgentState = AgentState.READY,
+        preemption_count: int = 0,
+    ) -> MagicMock:
+        agent = MagicMock(spec=Agent)
+
+        # Set the basic attributes
+        agent.id = agent_id
+        agent.priority = priority
+        agent.state = state
+        agent.preemption_count = preemption_count
+
+        return agent
+
+    return _create_mock_agent
 
 
 @pytest.fixture
@@ -55,12 +61,12 @@ class TestSchedulerInitialization:
 class TestSchedulerPreempt:
     @pytest.mark.parametrize("initial_preemption_count", [0, 1, 5])
     def test_preempt_agent_increments_preemption_count(
-        self, empty_scheduler, initial_preemption_count
+        self, empty_scheduler, initial_preemption_count, mock_agent_factory
     ):
         """Standard Case: Preempting an agent transitions its state to READY,
         INCREMENTS preemption_count from its prior value, frees its slot, and re-queues it.
         """
-        agent = create_test_agent(
+        agent = mock_agent_factory(
             "A1",
             priority=5,
             state=AgentState.RUNNING,
@@ -96,13 +102,15 @@ class TestSchedulerScheduleNext:
         for slot in empty_scheduler.slots:
             assert slot.currentAgent is None
 
-    def test_schedule_next_fills_empty_slots_by_priority(self, empty_scheduler):
+    def test_schedule_next_fills_empty_slots_by_priority(
+        self, empty_scheduler, mock_agent_factory
+    ):
         """Standard Case: Fills empty slots prioritizing agents with lower priority numbers.
         Returns tuples with was_preemption=False and an integer slot_id.
         """
-        agent1 = create_test_agent("A1", priority=10)
-        agent2 = create_test_agent("A2", priority=1)  # Highest priority
-        agent3 = create_test_agent("A3", priority=5)
+        agent1 = mock_agent_factory("A1", priority=10)
+        agent2 = mock_agent_factory("A2", priority=1)  # Highest priority
+        agent3 = mock_agent_factory("A3", priority=5)
 
         # Using PriorityQueue.put() with structure: (priority, insertion_counter, agent)[cite: 12]
         empty_scheduler.readyQueue.put((agent1.priority, 1, agent1))
@@ -135,11 +143,13 @@ class TestSchedulerScheduleNext:
         assert agent1.state == AgentState.READY
         assert empty_scheduler.readyQueue.qsize() == 1
 
-    def test_schedule_next_fifo_for_same_priority(self, empty_scheduler):
+    def test_schedule_next_fifo_for_same_priority(
+        self, empty_scheduler, mock_agent_factory
+    ):
         """Standard Case: Agents with identical priorities are scheduled in strict FIFO order."""
-        agent1 = create_test_agent("A1", priority=5)
-        agent2 = create_test_agent("A2", priority=5)
-        agent3 = create_test_agent("A3", priority=5)
+        agent1 = mock_agent_factory("A1", priority=5)
+        agent2 = mock_agent_factory("A2", priority=5)
+        agent3 = mock_agent_factory("A3", priority=5)
 
         empty_scheduler.readyQueue.put((agent1.priority, 1, agent1))
         empty_scheduler.readyQueue.put((agent2.priority, 2, agent2))
@@ -160,17 +170,17 @@ class TestSchedulerScheduleNext:
         assert agent3.state == AgentState.READY
 
     def test_schedule_next_no_preemption_if_priority_worse_or_equal(
-        self, empty_scheduler
+        self, empty_scheduler, mock_agent_factory
     ):
         """Standard Case: When slots are full, ready agents with worse/equal priority return [] and do not cause preemption."""
-        running1 = create_test_agent("R1", priority=2, state=AgentState.RUNNING)
-        running2 = create_test_agent("R2", priority=3, state=AgentState.RUNNING)
+        running1 = mock_agent_factory("R1", priority=2, state=AgentState.RUNNING)
+        running2 = mock_agent_factory("R2", priority=3, state=AgentState.RUNNING)
 
         empty_scheduler.slots[0].currentAgent = running1
         empty_scheduler.slots[1].currentAgent = running2
 
-        ready_worse = create_test_agent("W1", priority=5, state=AgentState.READY)
-        ready_equal = create_test_agent("E1", priority=3, state=AgentState.READY)
+        ready_worse = mock_agent_factory("W1", priority=5, state=AgentState.READY)
+        ready_equal = mock_agent_factory("E1", priority=3, state=AgentState.READY)
 
         empty_scheduler.readyQueue.put((ready_worse.priority, 1, ready_worse))
         empty_scheduler.readyQueue.put((ready_equal.priority, 2, ready_equal))
@@ -187,22 +197,24 @@ class TestSchedulerScheduleNext:
         assert ready_equal.state == AgentState.READY
 
     def test_schedule_next_preempts_lowest_priority_running_agent(
-        self, empty_scheduler
+        self, empty_scheduler, mock_agent_factory
     ):
         """Standard Case: Preempts lowest priority running agent when a higher-priority agent is ready.
         Returns tuple with was_preemption=True for the preempted slot assignment.
         """
-        running_high_pri = create_test_agent("R1", priority=1, state=AgentState.RUNNING)
+        running_high_pri = mock_agent_factory(
+            "R1", priority=1, state=AgentState.RUNNING
+        )
 
         initial_count = 3
-        running_low_pri = create_test_agent(
+        running_low_pri = mock_agent_factory(
             "R2", priority=10, state=AgentState.RUNNING, preemption_count=initial_count
         )
 
         empty_scheduler.slots[0].currentAgent = running_high_pri
         empty_scheduler.slots[1].currentAgent = running_low_pri
 
-        ready_better = create_test_agent("B1", priority=5, state=AgentState.READY)
+        ready_better = mock_agent_factory("B1", priority=5, state=AgentState.READY)
         empty_scheduler.readyQueue.put((ready_better.priority, 1, ready_better))
 
         assignments = empty_scheduler.scheduleNext()
@@ -222,16 +234,18 @@ class TestSchedulerScheduleNext:
         assert running_low_pri.state == AgentState.READY
         assert running_low_pri.preemption_count == initial_count + 1
 
-    def test_schedule_next_mixed_fill_and_preemption(self, empty_scheduler):
+    def test_schedule_next_mixed_fill_and_preemption(
+        self, empty_scheduler, mock_agent_factory
+    ):
         """Edge Case: Performs both normal slot fill (was_preemption=False) and preemption (was_preemption=True)
         in a single scheduleNext invocation.
         """
         # Slot 0 is empty, Slot 1 has low priority running agent
-        running_low = create_test_agent("R1", priority=10, state=AgentState.RUNNING)
+        running_low = mock_agent_factory("R1", priority=10, state=AgentState.RUNNING)
         empty_scheduler.slots[1].currentAgent = running_low
 
-        ready_1 = create_test_agent("B1", priority=1, state=AgentState.READY)
-        ready_2 = create_test_agent("B2", priority=2, state=AgentState.READY)
+        ready_1 = mock_agent_factory("B1", priority=1, state=AgentState.READY)
+        ready_2 = mock_agent_factory("B2", priority=2, state=AgentState.READY)
 
         empty_scheduler.readyQueue.put((ready_1.priority, 1, ready_1))
         empty_scheduler.readyQueue.put((ready_2.priority, 2, ready_2))
@@ -252,18 +266,20 @@ class TestSchedulerScheduleNext:
         preempt_assignment = next(a for a in assignments if a[2] is True)
         assert preempt_assignment == ("B2", empty_scheduler.slots[1].id, True)
 
-    def test_schedule_next_multiple_preemptions(self, empty_scheduler):
+    def test_schedule_next_multiple_preemptions(
+        self, empty_scheduler, mock_agent_factory
+    ):
         """Edge Case: Preempts multiple running agents when multiple higher-priority agents arrive.
         Returns multiple assignment tuples, all marked with was_preemption=True.
         """
-        running_low_1 = create_test_agent("R1", priority=9, state=AgentState.RUNNING)
-        running_low_2 = create_test_agent("R2", priority=10, state=AgentState.RUNNING)
+        running_low_1 = mock_agent_factory("R1", priority=9, state=AgentState.RUNNING)
+        running_low_2 = mock_agent_factory("R2", priority=10, state=AgentState.RUNNING)
 
         empty_scheduler.slots[0].currentAgent = running_low_1
         empty_scheduler.slots[1].currentAgent = running_low_2
 
-        ready_high_1 = create_test_agent("H1", priority=1, state=AgentState.READY)
-        ready_high_2 = create_test_agent("H2", priority=2, state=AgentState.READY)
+        ready_high_1 = mock_agent_factory("H1", priority=1, state=AgentState.READY)
+        ready_high_2 = mock_agent_factory("H2", priority=2, state=AgentState.READY)
 
         empty_scheduler.readyQueue.put((ready_high_1.priority, 1, ready_high_1))
         empty_scheduler.readyQueue.put((ready_high_2.priority, 2, ready_high_2))
@@ -281,9 +297,9 @@ class TestSchedulerScheduleNext:
 
 
 class TestSchedulerEnqueueReadyAgent:
-    def test_enqueue_single_agent(self, empty_scheduler):
+    def test_enqueue_single_agent(self, empty_scheduler, mock_agent_factory):
         """Standard Case: Enqueueing an agent places it in the queue with the correct tuple structure."""
-        agent = create_test_agent("A1", priority=5)
+        agent = mock_agent_factory("A1", priority=5)
 
         empty_scheduler.enqueue_ready_agent(agent)
 
@@ -295,10 +311,12 @@ class TestSchedulerEnqueueReadyAgent:
         assert queued_item[0] == 5
         assert queued_item[2] is agent
 
-    def test_enqueue_increments_counter_to_prevent_ties(self, empty_scheduler):
+    def test_enqueue_increments_counter_to_prevent_ties(
+        self, empty_scheduler, mock_agent_factory
+    ):
         """Standard Case: Enqueueing multiple agents strictly increments the internal counter."""
-        agent1 = create_test_agent("A1", priority=5)
-        agent2 = create_test_agent("A2", priority=5)
+        agent1 = mock_agent_factory("A1", priority=5)
+        agent2 = mock_agent_factory("A2", priority=5)
 
         empty_scheduler.enqueue_ready_agent(agent1)
         empty_scheduler.enqueue_ready_agent(agent2)
@@ -312,12 +330,14 @@ class TestSchedulerEnqueueReadyAgent:
 
         assert counter1 < counter2
 
-    def test_enqueue_maintains_priority_and_fifo_order(self, empty_scheduler):
+    def test_enqueue_maintains_priority_and_fifo_order(
+        self, empty_scheduler, mock_agent_factory
+    ):
         """Standard Case: The PriorityQueue correctly pops agents by priority, falling back to FIFO via the counter."""
-        agent_low_pri = create_test_agent("LowPri", priority=10)
-        agent_high_pri = create_test_agent("HighPri", priority=1)
-        agent_tie_1 = create_test_agent("Tie1", priority=5)
-        agent_tie_2 = create_test_agent("Tie2", priority=5)
+        agent_low_pri = mock_agent_factory("LowPri", priority=10)
+        agent_high_pri = mock_agent_factory("HighPri", priority=1)
+        agent_tie_1 = mock_agent_factory("Tie1", priority=5)
+        agent_tie_2 = mock_agent_factory("Tie2", priority=5)
 
         empty_scheduler.enqueue_ready_agent(agent_low_pri)
         empty_scheduler.enqueue_ready_agent(agent_tie_1)
@@ -336,9 +356,11 @@ class TestSchedulerEnqueueReadyAgent:
 
         assert empty_scheduler.readyQueue.qsize() == 0
 
-    def test_enqueue_already_queued_agent_is_ignored(self, empty_scheduler):
+    def test_enqueue_already_queued_agent_is_ignored(
+        self, empty_scheduler, mock_agent_factory
+    ):
         """Edge Case: Enqueueing an agent that is already in the readyQueue does not create duplicates."""
-        agent = create_test_agent("A1", priority=5)
+        agent = mock_agent_factory("A1", priority=5)
 
         empty_scheduler.enqueue_ready_agent(agent)
         assert empty_scheduler.readyQueue.qsize() == 1
