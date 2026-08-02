@@ -1,5 +1,4 @@
-import sys
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -306,51 +305,41 @@ class TestSimulationEngineHandle:
 
 
 class TestSimulationEngineRunMethod:
-    """Tests the full run() entry point of the SimulationEngine."""
+    """Tests the full run() entry point of the SimulationEngine using the Parser class."""
 
     @patch("sys.exit")
     @patch("engine_SimulationEngine.EventLogger")
     @patch("engine_SimulationEngine.LockManager")
     @patch("engine_SimulationEngine.Scheduler")
     @patch("engine_SimulationEngine.VFS")
-    @patch("engine_SimulationEngine.Agent")
-    @patch("engine_SimulationEngine.json")
-    @patch("builtins.open", new_callable=MagicMock)
+    @patch("engine_SimulationEngine.Parser")
     def test_run_initializes_and_executes_simulation_successfully(
         self,
-        mock_open,
-        mock_json,
-        mock_agent_cls,
+        mock_parser_cls,
         mock_vfs_cls,
         mock_sched_cls,
         mock_lock_mgr_cls,
         mock_logger_cls,
         mock_sys_exit,
     ):
-        """Standard Case: The run() method acts as a full factory and main loop for the application."""
+        """Standard Case: run() uses Parser to get the Config, builds the components, and loops the simulation."""
 
-        # 1. Provide Mock JSON Configuration
-        mock_json.load.return_value = {
-            "settings": {"max_running_agents": 4},
-            "vfs": {
-                "mounts": [{"source": "/host/dir", "target": "/vfs/mnt", "mode": "rw"}]
-            },
-            "agents": [
-                {
-                    "id": "ag_1",
-                    "priority": 3,
-                    "arrival_time": 0,
-                    "path": "/scripts/op1.script",
-                }
-            ],
-        }
+        # 1. Setup Mock Config returned by the Parser
+        mock_mount = MagicMock()
+        mock_mount.source = "/host/dir"
+        mock_mount.target = "/vfs/mnt"
+        mock_mount.mode = "rw"
 
-        # Control the Mock Agent returned to assert exact state mutations
         mock_agent_instance = MagicMock()
-        mock_agent_cls.return_value = mock_agent_instance
 
-        # Patch internal __init__ and tick() so we don't need real sub-system setups,
-        # but can verify run() orchestrates the pieces precisely.
+        mock_config = MagicMock()
+        mock_config.max_running_agents = 4
+        mock_config.mounts = [mock_mount]
+        mock_config.agents = [mock_agent_instance]
+
+        mock_parser_cls.parse_file.return_value = mock_config
+
+        # 2. Patch __init__ and tick() to control execution flow without needing real implementations
         with (
             patch.object(SimulationEngine, "__init__", return_value=None) as mock_init,
             patch.object(
@@ -360,23 +349,16 @@ class TestSimulationEngineRunMethod:
             # Execute Entry Point
             SimulationEngine.run("mocked_config.json")
 
-            # Validate Step 1: Config Parsing
-            mock_open.assert_any_call("mocked_config.json", "r")
-            mock_json.load.assert_called_once()
+            # Validate Step 1: Config Parsing delegates to Parser
+            mock_parser_cls.parse_file.assert_called_once_with("mocked_config.json")
 
-            # Validate Step 2: VFS Construction & Mount Population
+            # Validate Step 2: VFS Construction & Mount Population using Config properties
             mock_vfs_instance = mock_vfs_cls.return_value
             mock_vfs_instance.mount.assert_called_once_with(
                 "/host/dir", "/vfs/mnt", "rw"
             )
 
-            # Validate Step 3: Agent Initialization and Default Overrides
-            mock_open.assert_any_call("/scripts/op1.script", "r")
-            mock_agent_cls.assert_called_once_with(
-                id="ag_1", priority=3, arrival_time=0, operations=ANY
-            )
-
-            # Assert initial properties strictly required by the prompt
+            # Validate Step 3: Agent Initialization explicitly overriding start states
             assert mock_agent_instance.state == AgentState.NEW
             assert mock_agent_instance.current_op_index == 0
             assert mock_agent_instance.start_time == -1
@@ -389,7 +371,7 @@ class TestSimulationEngineRunMethod:
             mock_lock_mgr_cls.assert_called_once()
             mock_logger_cls.assert_called_once()
 
-            # Validate Step 5: Scheduler Construction
+            # Validate Step 5: Scheduler Construction uses max_running_agents from Config
             mock_sched_cls.assert_called_once_with(4)
 
             # Validate Step 6: Engine Factory Wiring (Clock defaults to 0 implicitly)
@@ -415,28 +397,24 @@ class TestSimulationEngineRunMethod:
     @patch("engine_SimulationEngine.LockManager")
     @patch("engine_SimulationEngine.Scheduler")
     @patch("engine_SimulationEngine.VFS")
-    @patch("engine_SimulationEngine.Agent")
-    @patch("engine_SimulationEngine.json")
-    @patch("builtins.open", new_callable=MagicMock)
-    def test_run_terminates_gracefully_with_empty_agents(
+    @patch("engine_SimulationEngine.Parser")
+    def test_run_terminates_gracefully_with_empty_config(
         self,
-        mock_open,
-        mock_json,
-        mock_agent_cls,
+        mock_parser_cls,
         mock_vfs_cls,
         mock_sched_cls,
         mock_lock_mgr_cls,
         mock_logger_cls,
         mock_sys_exit,
     ):
-        """Edge Case: Run successfully manages scenarios when no agents or mounts are configured."""
+        """Edge Case: Run successfully manages scenarios when no agents or mounts are present in the parsed Config."""
 
-        # Empty configuration parameters
-        mock_json.load.return_value = {
-            "settings": {"max_running_agents": 2},
-            "vfs": {"mounts": []},
-            "agents": [],
-        }
+        # Setup an empty mock Config
+        mock_config = MagicMock()
+        mock_config.max_running_agents = 2
+        mock_config.mounts = []
+        mock_config.agents = []
+        mock_parser_cls.parse_file.return_value = mock_config
 
         with (
             patch.object(SimulationEngine, "__init__", return_value=None),
@@ -446,7 +424,6 @@ class TestSimulationEngineRunMethod:
 
             # Check logic handles the empty lists gracefully
             mock_vfs_cls.return_value.mount.assert_not_called()
-            mock_agent_cls.assert_not_called()
 
             # Loop stops immediately on first return of False
             mock_tick.assert_called_once()
