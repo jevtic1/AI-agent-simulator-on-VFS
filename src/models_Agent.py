@@ -69,13 +69,20 @@ class Agent:
             # Forwards the return value from execute()
             result = op.execute(self, vfs, lock_manager)
 
+            # Terminate immediately if an operation returns an ERROR
+            if result and result[0] == "ERROR":
+                self.state = AgentState.TERMINATED
+                return result
+
             # Only progress to the next operation if the current one has no remaining time
             if op.remaining == 0:
                 self.isPreemptible = True
                 self.current_op_index += 1
 
-        # Check and update termination state
+        # Set to TERMINATED if the agent has finished all operations
         if self.current_op_index >= len(self.operations):
             self.state = AgentState.TERMINATED
+            if result is None:
+                return "ERROR", None, "GRESKA. Agent pozvan nakon svog kraja.", [], None
 
         return result
