@@ -42,7 +42,7 @@ class TestSchedulerInitialization:
         scheduler = Scheduler(maxRunningAgents=3)
 
         assert scheduler.maxRunningAgents == 3
-        # Ensure readyQueue is a PriorityQueue[cite: 12]
+        # Ensure readyQueue is a PriorityQueue
         assert isinstance(scheduler.readyQueue, PriorityQueue)
         assert scheduler.readyQueue.qsize() == 0
 
@@ -84,7 +84,7 @@ class TestSchedulerPreempt:
         # 2. preemption_count strictly incremented (+1)
         assert agent.preemption_count == initial_preemption_count + 1
 
-        # 3. Agent pushed back into readyQueue as a tuple: (priority, counter, agent)[cite: 12]
+        # 3. Agent pushed back into readyQueue as a tuple: (priority, counter, agent)
         assert any(agent == item[2] for item in empty_scheduler.readyQueue.queue)
 
         # 4. Slot is freed
@@ -106,36 +106,37 @@ class TestSchedulerScheduleNext:
         self, empty_scheduler, mock_agent_factory
     ):
         """Standard Case: Fills empty slots prioritizing agents with lower priority numbers.
-        Returns tuples with was_preemption=False and an integer slot_id.
+        Returns tuples with was_preemption=False and an actual Slot reference.
         """
         agent1 = mock_agent_factory("A1", priority=10)
         agent2 = mock_agent_factory("A2", priority=1)  # Highest priority
         agent3 = mock_agent_factory("A3", priority=5)
 
-        # Using PriorityQueue.put() with structure: (priority, insertion_counter, agent)[cite: 12]
+        # Using PriorityQueue.put() with structure: (priority, insertion_counter, agent)
         empty_scheduler.readyQueue.put((agent1.priority, 1, agent1))
         empty_scheduler.readyQueue.put((agent2.priority, 2, agent2))
         empty_scheduler.readyQueue.put((agent3.priority, 3, agent3))
 
         assignments = empty_scheduler.scheduleNext()
 
-        # Check returned tuple structure: (agent_id, slot_id, was_preemption)
+        # Check returned tuple structure: (Agent, Slot, was_preemption)
         assert isinstance(assignments, list)
         assert len(assignments) == 2
 
-        assigned_agent_ids = [a[0] for a in assignments]
+        assigned_agents = [a[0] for a in assignments]
         preemption_flags = [a[2] for a in assignments]
 
-        assert "A2" in assigned_agent_ids
-        assert "A3" in assigned_agent_ids
-        assert "A1" not in assigned_agent_ids
+        assert agent2 in assigned_agents
+        assert agent3 in assigned_agents
+        assert agent1 not in assigned_agents
         assert all(flag is False for flag in preemption_flags)
 
-        # Verify assigned slot references match actual scheduler slots and slot_id is int
-        for agent_id, slot_id, was_preempted in assignments:
-            assert isinstance(slot_id, int), "slot_id must be an integer"
-            slot = next(s for s in empty_scheduler.slots if s.id == slot_id)
-            assert slot.currentAgent.id == agent_id
+        # Verify assigned slot references match actual scheduler slots
+        for agent, slot, was_preempted in assignments:
+            assert slot in empty_scheduler.slots, (
+                "slot must be a Slot reference from the scheduler"
+            )
+            assert slot.currentAgent is agent
 
         # Verify state changes
         assert agent2.state == AgentState.RUNNING
@@ -158,11 +159,11 @@ class TestSchedulerScheduleNext:
         assignments = empty_scheduler.scheduleNext()
 
         assert len(assignments) == 2
-        assigned_ids = [a[0] for a in assignments]
-        assert assigned_ids == ["A1", "A2"]
+        assigned_agents = [a[0] for a in assignments]
+        assert assigned_agents == [agent1, agent2]
 
-        for _, slot_id, was_preemption in assignments:
-            assert isinstance(slot_id, int)
+        for _, slot, was_preemption in assignments:
+            assert slot in empty_scheduler.slots
             assert was_preemption is False
 
         assert agent1.state == AgentState.RUNNING
@@ -220,11 +221,10 @@ class TestSchedulerScheduleNext:
         assignments = empty_scheduler.scheduleNext()
 
         assert len(assignments) == 1
-        agent_id, slot_id, was_preemption = assignments[0]
+        agent, slot, was_preemption = assignments[0]
 
-        assert agent_id == "B1"
-        assert isinstance(slot_id, int)
-        assert slot_id == empty_scheduler.slots[1].id
+        assert agent is ready_better
+        assert slot is empty_scheduler.slots[1]
         assert was_preemption is True
 
         # R2 re-queued with updated state and incremented preemption count
@@ -254,17 +254,17 @@ class TestSchedulerScheduleNext:
 
         assert len(assignments) == 2
 
-        # Validate that slot_id is an integer for all returned tuples
-        for _, slot_id, _ in assignments:
-            assert isinstance(slot_id, int)
+        # Validate that slot is an actual object reference for all returned tuples
+        for _, slot, _ in assignments:
+            assert slot in empty_scheduler.slots
 
         # One assignment filling empty slot 0 without preemption
         fill_assignment = next(a for a in assignments if a[2] is False)
-        assert fill_assignment == ("B1", empty_scheduler.slots[0].id, False)
+        assert fill_assignment == (ready_1, empty_scheduler.slots[0], False)
 
         # One assignment preempting slot 1 with preemption flag True
         preempt_assignment = next(a for a in assignments if a[2] is True)
-        assert preempt_assignment == ("B2", empty_scheduler.slots[1].id, True)
+        assert preempt_assignment == (ready_2, empty_scheduler.slots[1], True)
 
     def test_schedule_next_multiple_preemptions(
         self, empty_scheduler, mock_agent_factory
@@ -288,12 +288,12 @@ class TestSchedulerScheduleNext:
 
         assert len(assignments) == 2
 
-        for _, slot_id, was_preemption in assignments:
-            assert isinstance(slot_id, int)
+        for _, slot, was_preemption in assignments:
+            assert slot in empty_scheduler.slots
             assert was_preemption is True
 
-        assigned_agent_ids = {a[0] for a in assignments}
-        assert assigned_agent_ids == {"H1", "H2"}
+        assigned_agents = {a[0] for a in assignments}
+        assert assigned_agents == {ready_high_1, ready_high_2}
 
 
 class TestSchedulerEnqueueReadyAgent:
