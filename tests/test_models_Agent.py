@@ -286,7 +286,30 @@ class TestAgentAdvance:
         assert agent.isPreemptible is False
         assert result == expected_return
 
+    def test_advance_terminates_on_error(self, agent, mock_operations):
+        """Test that advance sets agent state to TERMINATED if execute returns 'ERROR'."""
+        op = mock_operations[0]
+        op.remaining = 1
+
+        vfs_mock = MagicMock()
+        lock_manager_mock = MagicMock()
+
+        # The first element of the return value is "ERROR"
+        expected_return = ("ERROR", None, "GRESKA\n", [], None)
+
+        def mock_execute(*args, **kwargs):
+            return expected_return
+
+        op.execute.side_effect = mock_execute
+
+        result = agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+
+        # Verify the state was set to TERMINATED immediately upon receiving "ERROR"
+        assert agent.state == AgentState.TERMINATED
+        assert result == expected_return
+
     def test_advance_updates_state_when_finished(self, agent, mock_operations):
+        """Test that advance sets state to TERMINATED when current_op_index reaches len(operations)."""
         vfs_mock = MagicMock()
         lock_manager_mock = MagicMock()
 
@@ -305,9 +328,16 @@ class TestAgentAdvance:
         mock_operations[1].remaining = 1
         mock_operations[1].execute.side_effect = execute_op1
 
+        # First operation completes
         agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
+        assert agent.current_op_index == 1
+        assert agent.state != AgentState.TERMINATED
+
+        # Second (and final) operation completes
         agent.advance(vfs=vfs_mock, lock_manager=lock_manager_mock)
 
+        # Verify state is set to TERMINATED exactly when index equals length of operations list
+        assert agent.current_op_index == len(agent.operations)
         assert agent.state == AgentState.TERMINATED
 
     def test_advance_does_not_execute_or_increment_past_end(
@@ -343,7 +373,9 @@ class TestAgentAdvance:
         # Ensure it didn't crash and operations were only executed the intended amount of times
         mock_operations[0].execute.assert_called_once()
         mock_operations[1].execute.assert_called_once()
-        assert result is None
+        assert result[0] == "ERROR"
+        assert result[1] == None
+        assert result[2] == "GRESKA. Agent pozvan nakon svog kraja."
 
 
 class TestAgentHandles:
