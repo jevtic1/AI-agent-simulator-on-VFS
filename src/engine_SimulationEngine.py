@@ -22,12 +22,6 @@ class SimulationEngine:
     def tick(self) -> bool:
         """Executes a single tick of the simulation, consisting of 3 phases."""
 
-        # Return Condition: Stop if all agents are TERMINATED
-        if self.agents and all(
-            agent.state == AgentState.TERMINATED for agent in self.agents
-        ):
-            return False
-
         # Phase 1: Arrivals
         for agent in self.agents:
             if agent.state == AgentState.NEW and agent.arrival_time == self.clock:
@@ -42,16 +36,15 @@ class SimulationEngine:
                     detail=f"Agent {agent.id} stigao, prioritet={agent.priority}\n",
                 )
                 self.logger.log(event)
+            elif agent.state == AgentState.READY:
+                # Ensure agents initialized as READY are enqueued correctly
+                self.scheduler.enqueue_ready_agent(agent)
 
         # Phase 2: Scheduling
         new_assignments = self.scheduler.scheduleNext()
         newly_assigned_agents = set()
 
         for agent, slot, is_preemptible in new_assignments:
-            # Look up the actual Slot and Agent objects by ID
-            slot = next((s for s in self.scheduler.slots if s.id == slot.id), None)
-            agent = next((a for a in self.agents if a.id == agent.id), None)
-
             slot.closeCurrentInterval(self.clock)
             slot.openNewInterval(self.clock, agent.id)
 
@@ -74,31 +67,37 @@ class SimulationEngine:
                     outcome = slot.currentAgent.advance(self.vfs, self.lock_manager)
                     self.handle(agent, outcome, slot, self.clock)
 
+        # Return Condition: Stop if all agents are TERMINATED
+        if self.agents and all(
+            agent.state == AgentState.TERMINATED for agent in self.agents
+        ):
+            return False
+
         self.clock += 1
         return True
 
     def handle(self, agent, outcome, slot, clock):
         # 1. Unpack outcome tuple
-        if outcome is None:
-            print("VRACEN NONE! POPRAVI")
-            return
-
         status, event_type, detail, related_agent_ids, path = outcome
         agent_id = agent if isinstance(agent, str) else agent.id
 
         # 2. Log event
-        event = Event(
-            time=clock,
-            type=event_type,
-            agent_id=agent_id,
-            detail=detail,
-            related_agent_ids=related_agent_ids,
-            path=path,
-        )
-        self.logger.log(event)
+        if event_type is not None:
+            event = Event(
+                time=clock,
+                type=event_type,
+                agent_id=agent_id,
+                detail=detail,
+                related_agent_ids=related_agent_ids,
+                path=path,
+            )
+            self.logger.log(event)
 
         # 3. Release slot if agent blocked or terminated
-        if status in ("TERMINATED", "BLOCKED"):
+        if hasattr(agent, "state") and agent.state in (
+            AgentState.TERMINATED,
+            AgentState.BLOCKED,
+        ):
             slot.currentAgent = None
 
     @classmethod
