@@ -1,12 +1,11 @@
-from unittest.mock import MagicMock
+import sys
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-# Direct import - will cause test collection to fail until engine.py and SimulationEngine are implemented
+# Dependencies based on provided system specifications
 from engine_SimulationEngine import SimulationEngine
 from logger_Event import Event, EventType
-
-# Dependencies based on provided system specifications
 from models_Agent import Agent, AgentState
 
 
@@ -138,11 +137,11 @@ class TestSimulationEngineTick:
         engine.clock = 5
 
         # Setup newly assigned pair
-        mock_agent = mock_agent("agent_X", arrival_time=0)
-        mock_slot = mock_slot_factory(slot_id=0, current_agent=mock_agent)
+        mock_agent_instance = mock_agent("agent_X", arrival_time=0)
+        mock_slot = mock_slot_factory(slot_id=0, current_agent=mock_agent_instance)
 
         # scheduleNext returns the newly assigned tuple based on prompt design constraints
-        mock_scheduler.scheduleNext.return_value = [(mock_slot, mock_agent)]
+        mock_scheduler.scheduleNext.return_value = [(mock_slot, mock_agent_instance)]
 
         engine.tick()
 
@@ -231,7 +230,7 @@ class TestSimulationEngineHandle:
         assert actual_event.agent_id == "agent_1"
         assert actual_event.detail == "File read successfully"
         assert actual_event.related_agent_ids == []
-        assert actual_event.path == None
+        assert actual_event.path is None
 
         # Verify the slot was NOT released
         assert mock_slot.currentAgent == "agent_1"
@@ -306,15 +305,152 @@ class TestSimulationEngineHandle:
         assert mock_slot.currentAgent == "agent_1"
 
 
-class TestSimulationEngineRun:
-    """Tests the primary run loop of the SimulationEngine."""
+class TestSimulationEngineRunMethod:
+    """Tests the full run() entry point of the SimulationEngine."""
 
-    def test_run_loops_until_tick_returns_false(self, engine):
-        """Standard Case: run() executes a loop that stops exactly when tick() returns False."""
-        # Setup tick to return True twice, then False
-        engine.tick = MagicMock(side_effect=[True, True, False])
+    @patch("sys.exit")
+    @patch("engine_SimulationEngine.EventLogger")
+    @patch("engine_SimulationEngine.LockManager")
+    @patch("engine_SimulationEngine.Scheduler")
+    @patch("engine_SimulationEngine.VFS")
+    @patch("engine_SimulationEngine.Agent")
+    @patch("engine_SimulationEngine.json")
+    @patch("builtins.open", new_callable=MagicMock)
+    def test_run_initializes_and_executes_simulation_successfully(
+        self,
+        mock_open,
+        mock_json,
+        mock_agent_cls,
+        mock_vfs_cls,
+        mock_sched_cls,
+        mock_lock_mgr_cls,
+        mock_logger_cls,
+        mock_sys_exit,
+    ):
+        """Standard Case: The run() method acts as a full factory and main loop for the application."""
 
-        engine.run()
+        # 1. Provide Mock JSON Configuration
+        mock_json.load.return_value = {
+            "settings": {"max_running_agents": 4},
+            "vfs": {
+                "mounts": [{"source": "/host/dir", "target": "/vfs/mnt", "mode": "rw"}]
+            },
+            "agents": [
+                {
+                    "id": "ag_1",
+                    "priority": 3,
+                    "arrival_time": 0,
+                    "path": "/scripts/op1.script",
+                }
+            ],
+        }
 
-        # Validates the loop broke at the correct moment
-        assert engine.tick.call_count == 3
+        # Control the Mock Agent returned to assert exact state mutations
+        mock_agent_instance = MagicMock()
+        mock_agent_cls.return_value = mock_agent_instance
+
+        # Patch internal __init__ and tick() so we don't need real sub-system setups,
+        # but can verify run() orchestrates the pieces precisely.
+        with (
+            patch.object(SimulationEngine, "__init__", return_value=None) as mock_init,
+            patch.object(
+                SimulationEngine, "tick", side_effect=[True, True, False]
+            ) as mock_tick,
+        ):
+            # Execute Entry Point
+            SimulationEngine.run("mocked_config.json")
+
+            # Validate Step 1: Config Parsing
+            mock_open.assert_any_call("mocked_config.json", "r")
+            mock_json.load.assert_called_once()
+
+            # Validate Step 2: VFS Construction & Mount Population
+            mock_vfs_instance = mock_vfs_cls.return_value
+            mock_vfs_instance.mount.assert_called_once_with(
+                "/host/dir", "/vfs/mnt", "rw"
+            )
+
+            # Validate Step 3: Agent Initialization and Default Overrides
+            mock_open.assert_any_call("/scripts/op1.script", "r")
+            mock_agent_cls.assert_called_once_with(
+                id="ag_1", priority=3, arrival_time=0, operations=ANY
+            )
+
+            # Assert initial properties strictly required by the prompt
+            assert mock_agent_instance.state == AgentState.NEW
+            assert mock_agent_instance.current_op_index == 0
+            assert mock_agent_instance.start_time == -1
+            assert mock_agent_instance.end_time == -1
+            assert mock_agent_instance.wait_time == 0
+            assert mock_agent_instance.blocked_time == 0
+            assert mock_agent_instance.preemption_count == 0
+
+            # Validate Step 4: Base Component Instantiation
+            mock_lock_mgr_cls.assert_called_once()
+            mock_logger_cls.assert_called_once()
+
+            # Validate Step 5: Scheduler Construction
+            mock_sched_cls.assert_called_once_with(4)
+
+            # Validate Step 6: Engine Factory Wiring (Clock defaults to 0 implicitly)
+            mock_init.assert_called_once_with(
+                agents=[mock_agent_instance],
+                scheduler=mock_sched_cls.return_value,
+                logger=mock_logger_cls.return_value,
+                vfs=mock_vfs_instance,
+                lock_manager=mock_lock_mgr_cls.return_value,
+            )
+
+            # Validate Step 7: Tick Loop execution (3 calls to tick mock based on side_effect)
+            assert mock_tick.call_count == 3
+
+            # Validate Step 8: Final Logging call
+            mock_logger_cls.return_value.printReport.assert_called_once()
+
+            # Validate Step 9: Program termination hook
+            mock_sys_exit.assert_called_once_with(0)
+
+    @patch("sys.exit")
+    @patch("engine_SimulationEngine.EventLogger")
+    @patch("engine_SimulationEngine.LockManager")
+    @patch("engine_SimulationEngine.Scheduler")
+    @patch("engine_SimulationEngine.VFS")
+    @patch("engine_SimulationEngine.Agent")
+    @patch("engine_SimulationEngine.json")
+    @patch("builtins.open", new_callable=MagicMock)
+    def test_run_terminates_gracefully_with_empty_agents(
+        self,
+        mock_open,
+        mock_json,
+        mock_agent_cls,
+        mock_vfs_cls,
+        mock_sched_cls,
+        mock_lock_mgr_cls,
+        mock_logger_cls,
+        mock_sys_exit,
+    ):
+        """Edge Case: Run successfully manages scenarios when no agents or mounts are configured."""
+
+        # Empty configuration parameters
+        mock_json.load.return_value = {
+            "settings": {"max_running_agents": 2},
+            "vfs": {"mounts": []},
+            "agents": [],
+        }
+
+        with (
+            patch.object(SimulationEngine, "__init__", return_value=None),
+            patch.object(SimulationEngine, "tick", return_value=False) as mock_tick,
+        ):
+            SimulationEngine.run("empty_config.json")
+
+            # Check logic handles the empty lists gracefully
+            mock_vfs_cls.return_value.mount.assert_not_called()
+            mock_agent_cls.assert_not_called()
+
+            # Loop stops immediately on first return of False
+            mock_tick.assert_called_once()
+
+            # Report is printed regardless
+            mock_logger_cls.return_value.printReport.assert_called_once()
+            mock_sys_exit.assert_called_once_with(0)
