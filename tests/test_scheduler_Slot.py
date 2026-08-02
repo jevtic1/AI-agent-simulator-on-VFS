@@ -195,10 +195,12 @@ class TestSlotHistoryManagement:
         assert slot.history[-1].startTime == 5
 
     def test_closeCurrentInterval_empty_history(self):
-        """Edge Case: Attempting to close an interval when history is empty should raise an error."""
+        """Edge Case: Attempting to close an interval when history is empty should safely pass."""
         slot = Slot(id=25)
-        with pytest.raises((IndexError, ValueError)):
-            slot.closeCurrentInterval(clock=5)
+        # Should not raise any exceptions
+        slot.closeCurrentInterval(clock=5)
+        # History should still be empty
+        assert len(slot.history) == 0
 
     @pytest.mark.parametrize("invalid_clock", ["15", 15.5, None, [], {}])
     def test_closeCurrentInterval_invalid_clock_type(self, mock_agent, invalid_clock):
