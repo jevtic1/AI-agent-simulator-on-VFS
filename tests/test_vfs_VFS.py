@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import pytest
 
 from src.vfs_Mount import Mount
@@ -145,3 +147,20 @@ class TestVFS:
             )
 
         assert src.read_text() == "original content"
+
+
+class TestVFSSnapshot:
+    def test_snapshot_formatting(self, populated_vfs):
+        """Verifies snapshot() formats paths and properly escapes inner content strings."""
+        a_txt = populated_vfs.resolve("/work/a.txt")
+        b_txt = populated_vfs.resolve("/work/b.txt")
+
+        # Override with exact content from the test image to verify string escaping
+        a_txt.content = ""
+        b_txt.content = "A2\nA1\n"
+
+        snapshot_str = populated_vfs.snapshot()
+
+        assert isinstance(snapshot_str, str)
+        assert '/work/a.txt: ""' in snapshot_str
+        assert '/work/b.txt: "A2\\nA1\\n"' in snapshot_str
