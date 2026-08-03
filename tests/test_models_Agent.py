@@ -444,3 +444,24 @@ class TestAgentPreemptibleAttribute:
         assert agent.isPreemptible is True
         agent.isPreemptible = False
         assert agent.isPreemptible is False
+
+
+class TestAgentReportRow:
+    def test_report_row_formatting(self, agent):
+        """Verifies report_row() correctly maps attributes and formats strings."""
+        agent.state = AgentState.TERMINATED
+        agent.arrival_time = 0
+        agent.start_time = 0
+        agent.end_time = 6
+        agent.wait_time = 0
+        agent.blocked_time = 2
+        agent.preemption_count = 0
+
+        row = agent.report_row()
+
+        assert isinstance(row, str)
+        assert "A1" in row
+        # Asserts the correct state string translation shown in the provided chart
+        assert "zavrsen" in row
+        assert "6" in row
+        assert "2" in row

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from src.vfs_Mount import Mount
@@ -46,3 +47,14 @@ class VFS:
                 return vfile
 
         raise FileNotFoundError(f"File '{path}' not found in virtual file system.")
+
+    def snapshot(self) -> str:
+        """Returns a formatted snapshot of all virtual files and their string contents."""
+        lines = []
+        # Sort files by path for deterministic output ordering
+        sorted_files = sorted(self.files, key=lambda f: f.path)
+        for f in sorted_files:
+            # json.dumps correctly handles escaping of special control characters like newlines (\n)
+            escaped_content = json.dumps(f.content)
+            lines.append(f"{f.path}: {escaped_content}")
+        return "\n".join(lines)
