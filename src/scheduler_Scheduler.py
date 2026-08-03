@@ -1,6 +1,6 @@
 import heapq
 from queue import PriorityQueue
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from src.models_Agent import Agent, AgentState
 from src.scheduler_Slot import Slot
@@ -58,8 +58,12 @@ class Scheduler:
 
         self.enqueue_ready_agent(agent)
 
-    def scheduleNext(self) -> List[Tuple[any, any, bool]]:
-        """Fills empty slots and preempts lower priority agents if better ones are ready."""
+    def scheduleNext(self) -> List[Tuple[Agent, Slot, Optional[Agent]]]:
+        """Fills empty slots and preempts lower priority agents if better ones are ready.
+
+        Returns:
+            List of tuples: (assigned_agent, assigned_slot, preempted_agent)
+        """
         assignments = []
 
         # 1. Fill empty slots first
@@ -68,7 +72,7 @@ class Scheduler:
                 _, _, next_agent = self.readyQueue.get()
                 next_agent.state = AgentState.RUNNING
                 slot.currentAgent = next_agent
-                assignments.append((next_agent, slot, False))
+                assignments.append((next_agent, slot, None))
 
         # 2. Preempt worst running agents if higher priority agents are in queue
         while not self.readyQueue.empty():
@@ -84,14 +88,17 @@ class Scheduler:
             best_ready_priority = self.readyQueue.queue[0][0]
 
             if best_ready_priority < worst_slot.currentAgent.priority:
+                # Capture reference to the preempted agent prior to clearing the slot
+                preempted_agent = worst_slot.currentAgent
+
                 # Preempt worst
-                self.preempt(worst_slot.currentAgent)
+                self.preempt(preempted_agent)
 
                 # Assign the best ready agent to the newly freed slot
                 _, _, best_agent = self.readyQueue.get()
                 best_agent.state = AgentState.RUNNING
                 worst_slot.currentAgent = best_agent
-                assignments.append((best_agent, worst_slot, True))
+                assignments.append((best_agent, worst_slot, preempted_agent))
             else:
                 break  # No higher priority agents left to cause a preemption
 
