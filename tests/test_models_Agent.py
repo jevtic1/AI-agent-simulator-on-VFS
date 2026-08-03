@@ -33,6 +33,17 @@ INVALID_TRANSITIONS = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def isolate_agent_tests():
+    """
+    Automatically runs for every test. Clears the static all_agents
+    list before and after each test to prevent state leakage.
+    """
+    Agent.clear_agents()
+    yield
+    Agent.clear_agents()
+
+
 class TestAgentStateEnum:
     def test_enum_structure_and_members(self):
         assert issubclass(AgentState, Enum)
@@ -187,6 +198,28 @@ def mock_operations():
 @pytest.fixture
 def agent(mock_operations):
     return Agent(id="A1", priority=1, arrival_time=0, operations=mock_operations)
+
+
+class TestAgentStaticList:
+    def test_agent_registration(self, mock_operations):
+        """Test that instances are automatically registered in the static all_agents list."""
+        assert len(Agent.all_agents) == 0
+
+        agent1 = Agent(id="A1", priority=1, arrival_time=0, operations=mock_operations)
+        assert len(Agent.all_agents) == 1
+        assert Agent.all_agents[0] is agent1
+
+        agent2 = Agent(id="A2", priority=2, arrival_time=0, operations=mock_operations)
+        assert len(Agent.all_agents) == 2
+        assert Agent.all_agents[1] is agent2
+
+    def test_clear_agents(self, mock_operations):
+        """Test that the utility method clears the list correctly."""
+        Agent(id="A1", priority=1, arrival_time=0, operations=mock_operations)
+        assert len(Agent.all_agents) == 1
+
+        Agent.clear_agents()
+        assert len(Agent.all_agents) == 0
 
 
 class TestAgentInitialization:
@@ -461,7 +494,6 @@ class TestAgentReportRow:
 
         assert isinstance(row, str)
         assert "A1" in row
-        # Asserts the correct state string translation shown in the provided chart
         assert "zavrsen" in row
         assert "6" in row
         assert "2" in row
