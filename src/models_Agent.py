@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import List, Dict, Any
 
 _VALID_TRANSITIONS = {
     ("NEW", "READY"),
@@ -25,6 +26,9 @@ class AgentState(Enum):
 
 
 class Agent:
+    # Static list to hold references to all instantiated agents
+    all_agents: List["Agent"] = []
+
     def __init__(
         self,
         id: str,
@@ -52,6 +56,9 @@ class Agent:
         self.preemption_count = 0
         self.handles = {}
         self.isPreemptible = isPreemptible
+
+        # Add the current instance to the static list
+        Agent.all_agents.append(self)
 
     def nextOperation(self):
         if self.current_op_index >= len(self.operations):
@@ -98,3 +105,8 @@ class Agent:
         }
         status_str = status_map.get(self.state, self.state.name.lower())
         return f"{self.id:<7} {status_str:<11} {self.arrival_time:<9} {self.start_time:<8} {self.end_time:<5} {self.wait_time:<8} {self.blocked_time:<10} {self.preemption_count:<13}"
+
+    @classmethod
+    def clear_agents(cls):
+        """Utility method to clear the static list (useful for test isolation)."""
+        cls.all_agents.clear()
