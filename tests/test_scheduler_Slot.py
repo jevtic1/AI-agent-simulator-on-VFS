@@ -251,3 +251,20 @@ class TestSlotHistoryManagement:
         assert slot.history[2].startTime == 15
         assert slot.history[2].endTime == 30
         assert slot.history[2].agentId == "A2"
+
+
+class TestSlotGanttRow:
+    def test_gantt_row_formatting(self):
+        """Verifies the output string perfectly matches the gantt chart specification format."""
+        slot = Slot(id=1)
+        slot.openNewInterval(clock=0, agent_id="A1")
+        slot.closeCurrentInterval(clock=2)
+        slot.openNewInterval(clock=2, agent_id=None)
+        slot.closeCurrentInterval(clock=4)
+        slot.openNewInterval(clock=4, agent_id="A1")
+        slot.closeCurrentInterval(clock=6)
+
+        row = slot.gantt_row()
+
+        assert isinstance(row, str)
+        assert row == "slot_1: [0,2] A1 | [2,4] idle | [4,6] A1"
