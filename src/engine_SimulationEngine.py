@@ -118,6 +118,7 @@ class SimulationEngine:
             AgentState.BLOCKED,
         ):
             slot.currentAgent = None
+            slot.closeCurrentInterval(clock)
 
     @classmethod
     def run(cls, config_path: str):
