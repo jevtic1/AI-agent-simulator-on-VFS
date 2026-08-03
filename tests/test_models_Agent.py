@@ -497,3 +497,33 @@ class TestAgentReportRow:
         assert "zavrsen" in row
         assert "6" in row
         assert "2" in row
+
+
+class TestAgentClassStats:
+    def test_calculate_average_stats_with_agents(self, mock_operations):
+        """Tests that the static method correctly calculates and formats average wait and block times."""
+        a1 = Agent(id="A1", priority=1, arrival_time=0, operations=mock_operations)
+        a1.wait_time = 0
+        a1.blocked_time = 2
+
+        a2 = Agent(id="A2", priority=1, arrival_time=0, operations=mock_operations)
+        a2.wait_time = 0
+        a2.blocked_time = 0
+
+        # Expect wait_time average 0.00, blocked_time average 1.00
+        result = Agent.calculate_average_stats()
+
+        assert (
+            result
+            == "Prosjecno vrijeme čekanja: 0.00\nProsjecno vrijeme blokiranja: 1.00"
+        )
+
+    def test_calculate_average_stats_empty(self):
+        """Tests calculating averages when no agents exist in the static list."""
+        # Note: The test environment automatically clears the list via the isolate_agent_tests fixture
+        result = Agent.calculate_average_stats()
+
+        assert (
+            result
+            == "Prosjecno vrijeme čekanja: 0.00\nProsjecno vrijeme blokiranja: 0.00"
+        )
