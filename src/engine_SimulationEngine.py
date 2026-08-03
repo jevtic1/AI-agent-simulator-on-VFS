@@ -20,7 +20,7 @@ class SimulationEngine:
         self.clock = 0
 
     def tick(self) -> bool:
-        """Executes a single tick of the simulation, consisting of 3 phases."""
+        """Executes a single tick of the simulation, consisting of 3 phases and stats tracking."""
 
         # Phase 1: Arrivals
         for agent in self.agents:
@@ -44,7 +44,15 @@ class SimulationEngine:
         new_assignments = self.scheduler.scheduleNext()
         newly_assigned_agents = set()
 
-        for agent, slot, is_preemptible in new_assignments:
+        for agent, slot, preempt_agent in new_assignments:
+            # Set startTime on first assignment
+            if agent.startTime == -1:
+                agent.startTime = self.clock
+
+            # Increase preemption count for preempted agent if one exists
+            if preempt_agent is not None:
+                preempt_agent.preemption_count += 1
+
             slot.closeCurrentInterval(self.clock)
             slot.openNewInterval(self.clock, agent.id)
 
@@ -58,6 +66,13 @@ class SimulationEngine:
             self.logger.log(event)
 
             newly_assigned_agents.add(agent.id)
+
+        # Phase — STATS (uses state as it stood at the END of the previous tick)
+        for agent in self.agents:
+            if agent.state == AgentState.READY:
+                agent.waitTime += 1
+            elif agent.state == AgentState.BLOCKED:
+                agent.blockedTime += 1
 
         # Phase 3: Execution
         for slot in self.scheduler.slots:
@@ -93,6 +108,10 @@ class SimulationEngine:
             )
             self.logger.log(event)
 
+        # Record endTime if the agent has finished operations
+        if agent.state == AgentState.TERMINATED:
+            agent.endTime = clock
+
         # 3. Release slot if agent blocked or terminated
         if agent.state in (
             AgentState.TERMINATED,
@@ -115,10 +134,10 @@ class SimulationEngine:
         for agent in config.agents:
             agent.state = AgentState.NEW
             agent.current_op_index = 0
-            agent.start_time = -1
-            agent.end_time = -1
-            agent.wait_time = 0
-            agent.blocked_time = 0
+            agent.startTime = -1
+            agent.endTime = -1
+            agent.waitTime = 0
+            agent.blockedTime = 0
             agent.preemption_count = 0
 
         # 4 & 5. Instantiate core services
