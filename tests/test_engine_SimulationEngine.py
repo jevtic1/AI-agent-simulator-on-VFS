@@ -50,7 +50,7 @@ def mock_logger():
 
 @pytest.fixture
 def mock_agent():
-    """Helper fixture to create mocked Agents."""
+    """Helper fixture to create mocked Agents with all time-tracking attributes."""
 
     def _create_agent(agent_id, arrival_time, state=AgentState.NEW):
         agent = MagicMock(spec=Agent)
@@ -58,6 +58,11 @@ def mock_agent():
         agent.priority = 2
         agent.arrival_time = arrival_time
         agent.state = state
+        agent.startTime = -1
+        agent.endTime = -1
+        agent.waitTime = 0
+        agent.blockedTime = 0
+        agent.preemption_count = 0
         agent.advance = MagicMock(return_value="MOCK_OUTCOME")
         return agent
 
@@ -92,7 +97,7 @@ def engine(mock_scheduler, mock_logger):
 
 
 class TestSimulationEngineTick:
-    """Tests the Phase 1, Phase 2, Phase 3, and return rules of the tick() method."""
+    """Tests the Phase 1, Phase 2, STATS, Phase 3, and return rules of the tick() method."""
 
     def test_tick_phase1_arrivals_enqueues_correct_agents(
         self,
@@ -137,19 +142,25 @@ class TestSimulationEngineTick:
         mock_agent,
         mock_slot_factory,
     ):
-        """Standard Case: newlyAssigned agents have their intervals updated on the slot."""
+        """Standard Case: newlyAssigned agents have their intervals updated on the slot.
+        startTime is initialized if it was previously -1."""
         engine.clock = 5
 
         # Setup newly assigned pair
         mock_agent_instance = mock_agent("agent_X", arrival_time=0)
+        mock_agent_instance.startTime = -1
+
         mock_slot = mock_slot_factory(slot_id=0, current_agent=mock_agent_instance)
 
-        # scheduleNext returns the newly assigned tuple based on prompt design constraints
+        # scheduleNext returns the newly assigned tuple: (Agent, Slot, PreemptedAgent)
         mock_scheduler.scheduleNext.return_value = [
-            (mock_agent_instance, mock_slot, False)
+            (mock_agent_instance, mock_slot, None)
         ]
 
         engine.tick()
+
+        # Phase 2 Validation: startTime updated to current clock
+        assert mock_agent_instance.startTime == 5
 
         # Slot metrics should be finalized for prior state and opened for new agent
         mock_slot.closeCurrentInterval.assert_called_once_with(engine.clock - 1)
@@ -160,6 +171,58 @@ class TestSimulationEngineTick:
         assert actual_event.time == 5
         assert actual_event.type == EventType.SLOT_ASSIGNED
         assert actual_event.agent_id == "agent_X"
+
+    def test_tick_phase2_scheduling_increments_preempted_agent_count(
+        self, engine, mock_scheduler, mock_agent, mock_slot_factory
+    ):
+        """Standard Case: If a preempt_agent is present in the scheduleNext tuple,
+        its preemption_count must be incremented."""
+        engine.clock = 5
+
+        # Setup agents
+        mock_agent_instance = mock_agent("agent_HIGH", arrival_time=0)
+        mock_preempted_agent = mock_agent("agent_LOW", arrival_time=0)
+        mock_preempted_agent.preemption_count = 1
+
+        mock_slot = mock_slot_factory(slot_id=0, current_agent=mock_agent_instance)
+
+        # Return a preempted agent as the third element
+        mock_scheduler.scheduleNext.return_value = [
+            (mock_agent_instance, mock_slot, mock_preempted_agent)
+        ]
+
+        engine.tick()
+
+        # Preemption count must be incremented for the preempted agent
+        assert mock_preempted_agent.preemption_count == 2
+
+    def test_tick_stats_phase_updates_wait_and_blocked_times(self, engine, mock_agent):
+        """Standard Case: STATS phase correctly increments waitTime for READY agents
+        and blockedTime for BLOCKED agents."""
+        engine.clock = 5
+        agent_ready = mock_agent("r1", arrival_time=0, state=AgentState.READY)
+        agent_blocked = mock_agent("b1", arrival_time=0, state=AgentState.BLOCKED)
+        agent_running = mock_agent("run1", arrival_time=0, state=AgentState.RUNNING)
+
+        engine.agents = [agent_ready, agent_blocked, agent_running]
+
+        # Ensure initial states
+        assert agent_ready.waitTime == 0
+        assert agent_blocked.blockedTime == 0
+
+        engine.tick()
+
+        # waitTime should increase by 1 for READY agents
+        assert agent_ready.waitTime == 1
+        assert agent_ready.blockedTime == 0
+
+        # blockedTime should increase by 1 for BLOCKED agents
+        assert agent_blocked.waitTime == 0
+        assert agent_blocked.blockedTime == 1
+
+        # RUNNING agent time counters remain unaffected by STATS phase
+        assert agent_running.waitTime == 0
+        assert agent_running.blockedTime == 0
 
     def test_tick_phase3_execution_advances_only_existing_running_agents(
         self, engine, mock_scheduler, mock_agent, mock_slot_factory
@@ -176,7 +239,7 @@ class TestSimulationEngineTick:
         empty_slot = mock_slot_factory(slot_id=2, current_agent=None)
 
         mock_scheduler.slots = [existing_slot, new_slot, empty_slot]
-        mock_scheduler.scheduleNext.return_value = [(new_agent, new_slot, False)]
+        mock_scheduler.scheduleNext.return_value = [(new_agent, new_slot, None)]
 
         engine.tick()
 
@@ -247,7 +310,7 @@ class TestSimulationEngineHandle:
     def test_handle_removes_agent_from_slot_if_state_is_terminated(
         self, engine, mock_slot_factory, mock_agent
     ):
-        """Standard Case: If an agent's state is TERMINATED, the slot must be released and event logged."""
+        """Standard Case: If an agent's state is TERMINATED, the slot must be released, event logged, and endTime set."""
         mock_agent_instance = mock_agent(
             "agent_1", arrival_time=0, state=AgentState.TERMINATED
         )
@@ -270,6 +333,9 @@ class TestSimulationEngineHandle:
 
         # Verify the slot WAS released because the state is TERMINATED
         assert mock_slot.currentAgent is None
+
+        # Verify that endTime was correctly recorded to the clock time passed to handle()
+        assert mock_agent_instance.endTime == 20
 
     def test_handle_logs_event_and_releases_slot_on_blocked(
         self, engine, mock_slot_factory, mock_agent
@@ -378,10 +444,10 @@ class TestSimulationEngineRunMethod:
             # Validate Step 3: Agent Initialization explicitly overriding start states
             assert mock_agent_instance.state == AgentState.NEW
             assert mock_agent_instance.current_op_index == 0
-            assert mock_agent_instance.start_time == -1
-            assert mock_agent_instance.end_time == -1
-            assert mock_agent_instance.wait_time == 0
-            assert mock_agent_instance.blocked_time == 0
+            assert mock_agent_instance.startTime == -1
+            assert mock_agent_instance.endTime == -1
+            assert mock_agent_instance.waitTime == 0
+            assert mock_agent_instance.blockedTime == 0
             assert mock_agent_instance.preemption_count == 0
 
             # Validate Step 4: Base Component Instantiation
