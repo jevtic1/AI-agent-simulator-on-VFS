@@ -14,9 +14,7 @@ class EventLogger:
         print("--- Simulation Event Report ---")
         for event in self.events:
             # We print the core attributes so they are captured by standard output
-            print(
-                f"[{event.time}] {event.agent_id} | {event.type.name} | {event.detail} | {event.path}"
-            )
+            print(f"[{event.time}] {event.detail}")
 
         # Call summary for each slot
         print("=" * 28 + " Gantova karta " + "=" * 28)
