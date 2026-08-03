@@ -106,7 +106,7 @@ class TestSchedulerScheduleNext:
         self, empty_scheduler, mock_agent_factory
     ):
         """Standard Case: Fills empty slots prioritizing agents with lower priority numbers.
-        Returns tuples with was_preemption=False and an actual Slot reference.
+        Returns tuples with preempted_agent=None and an actual Slot reference.
         """
         agent1 = mock_agent_factory("A1", priority=10)
         agent2 = mock_agent_factory("A2", priority=1)  # Highest priority
@@ -119,20 +119,20 @@ class TestSchedulerScheduleNext:
 
         assignments = empty_scheduler.scheduleNext()
 
-        # Check returned tuple structure: (Agent, Slot, was_preemption)
+        # Check returned tuple structure: (Agent, Slot, preempted_agent)
         assert isinstance(assignments, list)
         assert len(assignments) == 2
 
         assigned_agents = [a[0] for a in assignments]
-        preemption_flags = [a[2] for a in assignments]
+        preempted_agents = [a[2] for a in assignments]
 
         assert agent2 in assigned_agents
         assert agent3 in assigned_agents
         assert agent1 not in assigned_agents
-        assert all(flag is False for flag in preemption_flags)
+        assert all(flag is None for flag in preempted_agents)
 
         # Verify assigned slot references match actual scheduler slots
-        for agent, slot, was_preempted in assignments:
+        for agent, slot, preempted_agent in assignments:
             assert slot in empty_scheduler.slots, (
                 "slot must be a Slot reference from the scheduler"
             )
@@ -162,9 +162,9 @@ class TestSchedulerScheduleNext:
         assigned_agents = [a[0] for a in assignments]
         assert assigned_agents == [agent1, agent2]
 
-        for _, slot, was_preemption in assignments:
+        for _, slot, preempted_agent in assignments:
             assert slot in empty_scheduler.slots
-            assert was_preemption is False
+            assert preempted_agent is None
 
         assert agent1.state == AgentState.RUNNING
         assert agent2.state == AgentState.RUNNING
@@ -201,7 +201,7 @@ class TestSchedulerScheduleNext:
         self, empty_scheduler, mock_agent_factory
     ):
         """Standard Case: Preempts lowest priority running agent when a higher-priority agent is ready.
-        Returns tuple with was_preemption=True for the preempted slot assignment.
+        Returns tuple containing preempted_agent reference for the preempted slot assignment.
         """
         running_high_pri = mock_agent_factory(
             "R1", priority=1, state=AgentState.RUNNING
@@ -221,11 +221,11 @@ class TestSchedulerScheduleNext:
         assignments = empty_scheduler.scheduleNext()
 
         assert len(assignments) == 1
-        agent, slot, was_preemption = assignments[0]
+        agent, slot, preempted_agent = assignments[0]
 
         assert agent is ready_better
         assert slot is empty_scheduler.slots[1]
-        assert was_preemption is True
+        assert preempted_agent is running_low_pri
 
         # R2 re-queued with updated state and incremented preemption count
         assert any(
@@ -237,7 +237,7 @@ class TestSchedulerScheduleNext:
     def test_schedule_next_mixed_fill_and_preemption(
         self, empty_scheduler, mock_agent_factory
     ):
-        """Edge Case: Performs both normal slot fill (was_preemption=False) and preemption (was_preemption=True)
+        """Edge Case: Performs both normal slot fill (preempted_agent=None) and preemption (with preempted_agent reference)
         in a single scheduleNext invocation.
         """
         # Slot 0 is empty, Slot 1 has low priority running agent
@@ -259,18 +259,18 @@ class TestSchedulerScheduleNext:
             assert slot in empty_scheduler.slots
 
         # One assignment filling empty slot 0 without preemption
-        fill_assignment = next(a for a in assignments if a[2] is False)
-        assert fill_assignment == (ready_1, empty_scheduler.slots[0], False)
+        fill_assignment = next(a for a in assignments if a[2] is None)
+        assert fill_assignment == (ready_1, empty_scheduler.slots[0], None)
 
-        # One assignment preempting slot 1 with preemption flag True
-        preempt_assignment = next(a for a in assignments if a[2] is True)
-        assert preempt_assignment == (ready_2, empty_scheduler.slots[1], True)
+        # One assignment preempting slot 1 with preempted_agent reference to running_low
+        preempt_assignment = next(a for a in assignments if a[2] is not None)
+        assert preempt_assignment == (ready_2, empty_scheduler.slots[1], running_low)
 
     def test_schedule_next_multiple_preemptions(
         self, empty_scheduler, mock_agent_factory
     ):
         """Edge Case: Preempts multiple running agents when multiple higher-priority agents arrive.
-        Returns multiple assignment tuples, all marked with was_preemption=True.
+        Returns multiple assignment tuples, all marked with preempted_agent references.
         """
         running_low_1 = mock_agent_factory("R1", priority=9, state=AgentState.RUNNING)
         running_low_2 = mock_agent_factory("R2", priority=10, state=AgentState.RUNNING)
@@ -288,9 +288,9 @@ class TestSchedulerScheduleNext:
 
         assert len(assignments) == 2
 
-        for _, slot, was_preemption in assignments:
+        for _, slot, preempted_agent in assignments:
             assert slot in empty_scheduler.slots
-            assert was_preemption is True
+            assert preempted_agent in [running_low_1, running_low_2]
 
         assigned_agents = {a[0] for a in assignments}
         assert assigned_agents == {ready_high_1, ready_high_2}
