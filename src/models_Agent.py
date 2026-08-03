@@ -86,3 +86,15 @@ class Agent:
                 return "ERROR", None, "GRESKA. Agent pozvan nakon svog kraja.", [], None
 
         return result
+
+    def report_row(self) -> str:
+        """Returns the formatted summary row for the agent report matching system output formatting."""
+        status_map = {
+            AgentState.NEW: "novi",
+            AgentState.READY: "spreman",
+            AgentState.RUNNING: "izvršava se",
+            AgentState.BLOCKED: "blokiran",
+            AgentState.TERMINATED: "zavrsen",
+        }
+        status_str = status_map.get(self.state, self.state.name.lower())
+        return f"{self.id:<7} {status_str:<11} {self.arrival_time:<9} {self.start_time:<8} {self.end_time:<5} {self.wait_time:<8} {self.blocked_time:<10} {self.preemption_count:<13}"
