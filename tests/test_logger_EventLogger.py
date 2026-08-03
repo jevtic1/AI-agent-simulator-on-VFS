@@ -80,17 +80,26 @@ class TestEventLogger:
             logger.log(invalid_event)
 
     def test_print_report_empty_logger(self, logger, capsys):
-        logger.printReport()
+        agents = []
+        slots = []
+        mock_vfs = MagicMock()
+
+        logger.printReport(agents, slots, mock_vfs)
         captured = capsys.readouterr()
 
         assert captured.out != ""
         assert captured.err == ""
+        mock_vfs.snapshot.assert_called_once()
 
     def test_print_report_with_events(self, logger, event_arrival, event_done, capsys):
         logger.log(event_arrival)
         logger.log(event_done)
 
-        logger.printReport()
+        mock_agent = MagicMock()
+        mock_slot = MagicMock()
+        mock_vfs = MagicMock()
+
+        logger.printReport([mock_agent], [mock_slot], mock_vfs)
         captured = capsys.readouterr()
 
         assert "agent_1" in captured.out
@@ -100,8 +109,18 @@ class TestEventLogger:
         assert "/mnt/data/file.txt" in captured.out
         assert captured.err == ""
 
+        # Verify that summary is called for both agent and slot, and snapshot for vfs
+        mock_agent.report_row.assert_called_once()
+        mock_slot.gantt_row.assert_called_once()
+        mock_vfs.snapshot.assert_called_once()
+
     def test_print_report_does_not_clear_events(self, logger, event_arrival):
         logger.log(event_arrival)
-        logger.printReport()
+
+        mock_agent = MagicMock()
+        mock_slot = MagicMock()
+        mock_vfs = MagicMock()
+
+        logger.printReport([mock_agent], [mock_slot], mock_vfs)
 
         assert len(logger.events) == 1
