@@ -94,7 +94,7 @@ class SimulationEngine:
             self.logger.log(event)
 
         # 3. Release slot if agent blocked or terminated
-        if hasattr(agent, "state") and agent.state in (
+        if agent.state in (
             AgentState.TERMINATED,
             AgentState.BLOCKED,
         ):
@@ -140,7 +140,7 @@ class SimulationEngine:
             pass
 
         # 8 & 9. Output report and terminate program
-        logger.printReport()
+        logger.printReport(config.agents, scheduler.slots, vfs)
         sys.exit(0)
 
 

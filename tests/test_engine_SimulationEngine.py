@@ -403,8 +403,10 @@ class TestSimulationEngineRunMethod:
             # Validate Step 7: Tick Loop execution (3 calls to tick mock based on side_effect)
             assert mock_tick.call_count == 3
 
-            # Validate Step 8: Final Logging call
-            mock_logger_cls.return_value.printReport.assert_called_once()
+            # Validate Step 8: Final Logging call with agents, slots, and vfs references
+            mock_logger_cls.return_value.printReport.assert_called_once_with(
+                mock_config.agents, mock_sched_cls.return_value.slots, mock_vfs_instance
+            )
 
             # Validate Step 9: Program termination hook
             mock_sys_exit.assert_called_once_with(0)
@@ -445,6 +447,10 @@ class TestSimulationEngineRunMethod:
             # Loop stops immediately on first return of False
             mock_tick.assert_called_once()
 
-            # Report is printed regardless
-            mock_logger_cls.return_value.printReport.assert_called_once()
+            # Report is printed regardless with agents, slots, and vfs references
+            mock_logger_cls.return_value.printReport.assert_called_once_with(
+                mock_config.agents,
+                mock_sched_cls.return_value.slots,
+                mock_vfs_cls.return_value,
+            )
             mock_sys_exit.assert_called_once_with(0)
