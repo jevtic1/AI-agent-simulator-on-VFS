@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Dict, Any
+from typing import List
 
 _VALID_TRANSITIONS = {
     ("NEW", "READY"),
@@ -110,3 +110,17 @@ class Agent:
     def clear_agents(cls):
         """Utility method to clear the static list (useful for test isolation)."""
         cls.all_agents.clear()
+
+    @classmethod
+    def calculate_average_stats(cls) -> str:
+        """Calculates and returns formatted average statistics for all registered agents."""
+        if not cls.all_agents:
+            return "Prosjecno vrijeme čekanja: 0.00\nProsjecno vrijeme blokiranja: 0.00"
+
+        total_wait_time = sum(agent.wait_time for agent in cls.all_agents)
+        total_blocked_time = sum(agent.blocked_time for agent in cls.all_agents)
+
+        avg_wait = total_wait_time / len(cls.all_agents)
+        avg_blocked = total_blocked_time / len(cls.all_agents)
+
+        return f"Prosjecno vrijeme čekanja: {avg_wait:.2f}\nProsjecno vrijeme blokiranja: {avg_blocked:.2f}"
