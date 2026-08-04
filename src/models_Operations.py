@@ -119,7 +119,7 @@ class ReadOp(Operation):
             vf = vfs.resolve(fh.path)
             content = vf.read()
             self.remaining = 0
-            detail = f"{agent.id} READ {self.handle}.\n--------đ---- Output ------------\n {content}\n--------------------------------"
+            detail = f"{agent.id} READ {self.handle}.\n------------ Output ------------\n {content}\n--------------------------------"
             return "DONE", EventType.READ_DONE, detail, [], None
         except Exception:
             detail = f"{agent.id} READ {self.handle} -> GRESKA: desila se nepredvidjena greska"
