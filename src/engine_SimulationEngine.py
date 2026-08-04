@@ -50,8 +50,6 @@ class SimulationEngine:
                 agent.start_time = self.clock
 
             # Increase preemption count for preempted agent if one exists
-            if preempt_agent is not None:
-                preempt_agent.preemption_count += 1
 
             slot.closeCurrentInterval(self.clock)
             slot.openNewInterval(self.clock, agent.id)
