@@ -33,7 +33,7 @@ class SimulationEngine:
                     time=self.clock,
                     type=EventType.AGENT_ARRIVED,
                     agent_id=agent.id,
-                    detail=f"Agent {agent.id} stigao, prioritet={agent.priority}\n",
+                    detail=f"Agent {agent.id} stigao, prioritet={agent.priority}",
                 )
                 self.logger.log(event)
             elif agent.state == AgentState.READY:
@@ -61,7 +61,7 @@ class SimulationEngine:
                 time=self.clock,
                 type=EventType.SLOT_ASSIGNED,
                 agent_id=agent.id,
-                detail=f"{slot.id} <- {agent.id}",
+                detail=f"slot_{slot.id} <- {agent.id}",
             )
             self.logger.log(event)
 
