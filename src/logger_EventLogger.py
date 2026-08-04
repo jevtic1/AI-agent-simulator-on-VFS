@@ -55,7 +55,7 @@ class EventLogger:
     def get_open_rejected_events(self) -> str:
         """Returns a formatted string containing only the OPEN_REJECTED events."""
         rejected_events = [
-            event.detail
+            f"[{event.time}] {event.detail}"
             for event in self.events
             if event.type == EventType.OPEN_REJECTED
         ]
