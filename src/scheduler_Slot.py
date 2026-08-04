@@ -80,5 +80,5 @@ class Slot:
         intervals_str = []
         for interval in self.history:
             owner = interval.agentId if interval.agentId is not None else "idle"
-            intervals_str.append(f"[{interval.startTime},{interval.endTime}] {owner}")
+            intervals_str.append(f"[{interval.startTime},{interval.endTime}) {owner}")
         return f"slot_{self.id}: " + " | ".join(intervals_str)

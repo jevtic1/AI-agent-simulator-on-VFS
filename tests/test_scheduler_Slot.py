@@ -267,4 +267,4 @@ class TestSlotGanttRow:
         row = slot.gantt_row()
 
         assert isinstance(row, str)
-        assert row == "slot_1: [0,2] A1 | [2,4] idle | [4,6] A1"
+        assert row == "slot_1: [0,2) A1 | [2,4) idle | [4,6) A1"
