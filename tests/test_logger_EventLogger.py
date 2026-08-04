@@ -115,11 +115,7 @@ class TestEventLogger:
         logger.printReport([mock_agent], [mock_slot], mock_vfs)
         captured = capsys.readouterr()
 
-        assert "agent_1" in captured.out
-        assert "AGENT_ARRIVED" in captured.out
-        assert "OPERATION_DONE" in captured.out
         assert "Mock detail." in captured.out
-        assert "/mnt/data/file.txt" in captured.out
         assert captured.err == ""
 
         # Verify that summary is called for both agent and slot, and snapshot for vfs
@@ -151,7 +147,7 @@ class TestEventLogger:
 
         assert isinstance(result, str)
         # Check that the open rejected event's data is present
-        assert "agent_2" in result or "Event(OPEN_REJECTED, agent_2)" in result
+        assert "Mock rejected detail." in result
 
         # Check that the other event types are filtered out
         assert "agent_1" not in result

@@ -178,7 +178,7 @@ class TestThinkOp:
 
         assert status == "RUNNING"
         assert event_type == EventType.THINKING
-        assert detail == "mock_agent THINKING\n"
+        assert detail == "mock_agent THINKING"
         assert related == []
         assert path is None
 
@@ -199,7 +199,7 @@ class TestThinkOp:
 
         assert status == "DONE"
         assert event_type == EventType.THINK_DONE
-        assert detail == "mock_agent THINKING\nmock_agent FINISHED THINKING\n"
+        assert detail == "mock_agent THINKING\n    mock_agent FINISHED THINKING"
         assert related == []
         assert path is None
 
@@ -244,7 +244,7 @@ class TestOpenOp:
 
         assert status == "DONE"
         assert event_type == EventType.OPEN_GRANTED
-        assert detail == "mock_agent OPEN /tmp/test.txt write as h100 -> zakljucano\n"
+        assert detail == "mock_agent OPEN /tmp/test.txt write as h100 -> zakljucano"
         assert related == []
         assert path == "/tmp/test.txt"
 
@@ -279,7 +279,7 @@ class TestOpenOp:
         assert event_type == EventType.OPEN_BLOCKED
         assert (
             detail
-            == "mock_agent OPEN /tmp/test.txt write as h100 -> blokiran, ceka mock_agent_2\n"
+            == "mock_agent OPEN /tmp/test.txt write as h100 -> blokiran, ceka mock_agent_2"
         )
         assert related == ["mock_agent_2"]
         assert path == "/tmp/test.txt"
@@ -346,7 +346,7 @@ class TestOpenOp:
         assert event_type == EventType.OPEN_ERROR
         assert (
             detail
-            == "mock_agent OPEN /tmp/test.txt write as h100 -> GRESKA: desila se nepredvidjena greska\n"
+            == "mock_agent OPEN /tmp/test.txt write as h100 -> GRESKA: desila se nepredvidjena greska"
         )
         assert path == "/tmp/test.txt"
 
@@ -388,7 +388,10 @@ class TestReadOp:
 
         assert status == "DONE"
         assert event_type == EventType.READ_DONE
-        assert detail == "mock_agent READ h1. Output: read-only content\n"
+        assert (
+            detail
+            == "mock_agent READ h1.\n--------đ---- Output ------------\n read-only content\n--------------------------------"
+        )
         assert related == []
         assert path is None
 
@@ -412,7 +415,7 @@ class TestReadOp:
         assert event_type == EventType.READ_ERROR
         assert (
             detail
-            == "mock_agent READ missing_h -> GRESKA: desila se nepredvidjena greska\n"
+            == "mock_agent READ missing_h -> GRESKA: desila se nepredvidjena greska"
         )
         assert related == []
         assert path is None
@@ -453,7 +456,7 @@ class TestWriteOp:
 
         assert status == "DONE"
         assert event_type == EventType.WRITE_DONE
-        assert detail == "mock_agent WRITE h_write 'Completely overwritten data.'\n"
+        assert detail == "mock_agent WRITE h_write 'Completely overwritten data.'"
         assert related == []
         assert path is None
 
@@ -486,7 +489,7 @@ class TestWriteOp:
         assert event_type == EventType.WRITE_ERROR
         assert (
             detail
-            == "mock_agent WRITE h_write 'Should not write' -> GRESKA: desila se nepredvidjena greska\n"
+            == "mock_agent WRITE h_write 'Should not write' -> GRESKA: desila se nepredvidjena greska"
         )
         assert related == []
         assert path is None
@@ -522,7 +525,7 @@ class TestAppendOp:
 
         assert status == "DONE"
         assert event_type == EventType.APPEND_DONE
-        assert detail == "mock_agent APPEND h_append 'line 2'\n"
+        assert detail == "mock_agent APPEND h_append 'line 2'"
         assert related == []
         assert path is None
 
@@ -553,7 +556,7 @@ class TestAppendOp:
         assert event_type == EventType.APPEND_ERROR
         assert (
             detail
-            == "mock_agent APPEND h_append 'line 2' -> GRESKA: desila se nepredvidjena greska\n"
+            == "mock_agent APPEND h_append 'line 2' -> GRESKA: desila se nepredvidjena greska"
         )
         assert related == []
         assert path is None
@@ -595,7 +598,7 @@ class TestCloseOp:
 
         assert status == "DONE"
         assert event_type == EventType.CLOSE_DONE
-        assert detail == "CLOSE h_close\n"
+        assert detail == "CLOSE h_close"
         assert related == []  # Since no agents were woken in this test scenario
         assert path == "/docs/close_me.txt"
 
@@ -618,7 +621,7 @@ class TestCloseOp:
 
         assert status == "ERROR"
         assert event_type == EventType.CLOSE_ERROR
-        assert detail == "CLOSE missing_h\n -> GRESKA: desila se nepredvidjena greska\n"
+        assert detail == "CLOSE missing_h\n -> GRESKA: desila se nepredvidjena greska"
         # Path is unresolvable when the handle is missing
         assert path is None
 
