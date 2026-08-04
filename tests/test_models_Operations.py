@@ -390,7 +390,7 @@ class TestReadOp:
         assert event_type == EventType.READ_DONE
         assert (
             detail
-            == "mock_agent READ h1.\n------------ Output ------------\n read-only content\n--------------------------------"
+            == "mock_agent READ h1\n------------ Output ------------\n read-only content\n--------------------------------"
         )
         assert related == []
         assert path is None
