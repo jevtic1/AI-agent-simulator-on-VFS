@@ -193,8 +193,8 @@ class CloseOp(Operation):
             del agent.handles[self.handle]
 
             self.remaining = 0
-            detail = f"CLOSE {self.handle}"
+            detail = f"{agent.id} CLOSE {self.handle}"
             return "DONE", EventType.CLOSE_DONE, detail, woken_agents, path
         except Exception:
-            detail = f"CLOSE {self.handle}\n -> GRESKA: desila se nepredvidjena greska"
+            detail = f"{agent.id} CLOSE {self.handle}\n -> GRESKA: desila se nepredvidjena greska"
             return "ERROR", EventType.CLOSE_ERROR, detail, [], None

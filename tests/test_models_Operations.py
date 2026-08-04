@@ -598,7 +598,7 @@ class TestCloseOp:
 
         assert status == "DONE"
         assert event_type == EventType.CLOSE_DONE
-        assert detail == "CLOSE h_close"
+        assert detail == "mock_agent CLOSE h_close"
         assert related == []  # Since no agents were woken in this test scenario
         assert path == "/docs/close_me.txt"
 
@@ -621,7 +621,10 @@ class TestCloseOp:
 
         assert status == "ERROR"
         assert event_type == EventType.CLOSE_ERROR
-        assert detail == "CLOSE missing_h\n -> GRESKA: desila se nepredvidjena greska"
+        assert (
+            detail
+            == "mock_agent CLOSE missing_h\n -> GRESKA: desila se nepredvidjena greska"
+        )
         # Path is unresolvable when the handle is missing
         assert path is None
 
