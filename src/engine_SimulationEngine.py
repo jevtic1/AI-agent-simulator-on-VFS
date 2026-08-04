@@ -92,14 +92,13 @@ class SimulationEngine:
     def handle(self, agent, outcome, slot, clock):
         # 1. Unpack outcome tuple
         status, event_type, detail, related_agent_ids, path = outcome
-        agent_id = agent if isinstance(agent, str) else agent.id
 
         # 2. Log event
         if event_type is not None:
             event = Event(
                 time=clock,
                 type=event_type,
-                agent_id=agent_id,
+                agent_id=agent.id,
                 detail=detail,
                 related_agent_ids=related_agent_ids,
                 path=path,
