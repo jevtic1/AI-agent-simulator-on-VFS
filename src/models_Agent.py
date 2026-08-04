@@ -77,7 +77,7 @@ class Agent:
             result = op.execute(self, vfs, lock_manager)
 
             # Terminate immediately if an operation returns an ERROR
-            if result and result[0] == "ERROR":
+            if result and (result[0] == "ERROR" or result[0] == "REJECTED"):
                 self.state = AgentState.TERMINATED
                 return result
 

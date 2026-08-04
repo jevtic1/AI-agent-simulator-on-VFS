@@ -325,7 +325,7 @@ class TestOpenOp:
         assert "h100" not in mock_agent.handles
 
         assert op.remaining == 1
-        assert mock_agent.state == AgentState.RUNNING
+        assert mock_agent.state == AgentState.TERMINATED
         assert mock_agent not in mock_lock_manager.locks["/tmp/test.txt"].waiters
 
     def test_open_op_execution_error(

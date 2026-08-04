@@ -108,6 +108,10 @@ class SimulationEngine:
         # Record end_time if the agent has finished operations
         if agent.state == AgentState.TERMINATED:
             agent.end_time = clock
+            # Release all locks currently held by this agent so waiting agents can wake up
+            for fh in list(agent.handles.values()):
+                self.lock_manager.release(agent, fh.path)
+            agent.handles.clear()
 
         # 3. Release slot if agent blocked or terminated
         if agent.state in (

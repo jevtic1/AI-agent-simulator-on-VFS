@@ -82,7 +82,7 @@ class OpenOp(Operation):
                 return "DONE", EventType.OPEN_GRANTED, detail, [], self.path
 
             elif cycle_path:
-                agent.state = AgentState.RUNNING
+                agent.state = AgentState.TERMINATED
                 detail = f"{agent.id} OPEN {self.path} {self.mode} as {self.handle} -> odbijeno, nastao bi ciklus ({', '.join(cycle_path)})"
                 return (
                     "REJECTED",
