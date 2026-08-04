@@ -63,6 +63,7 @@ def mock_agent():
         agent.wait_time = 0
         agent.blocked_time = 0
         agent.preemption_count = 0
+        agent.handles = {}
         agent.advance = MagicMock(return_value="MOCK_OUTCOME")
         return agent
 
