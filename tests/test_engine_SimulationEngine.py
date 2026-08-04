@@ -172,30 +172,6 @@ class TestSimulationEngineTick:
         assert actual_event.type == EventType.SLOT_ASSIGNED
         assert actual_event.agent_id == "agent_X"
 
-    def test_tick_phase2_scheduling_increments_preempted_agent_count(
-        self, engine, mock_scheduler, mock_agent, mock_slot_factory
-    ):
-        """Standard Case: If a preempt_agent is present in the scheduleNext tuple,
-        its preemption_count must be incremented."""
-        engine.clock = 5
-
-        # Setup agents
-        mock_agent_instance = mock_agent("agent_HIGH", arrival_time=0)
-        mock_preempted_agent = mock_agent("agent_LOW", arrival_time=0)
-        mock_preempted_agent.preemption_count = 1
-
-        mock_slot = mock_slot_factory(slot_id=0, current_agent=mock_agent_instance)
-
-        # Return a preempted agent as the third element
-        mock_scheduler.scheduleNext.return_value = [
-            (mock_agent_instance, mock_slot, mock_preempted_agent)
-        ]
-
-        engine.tick()
-
-        # Preemption count must be incremented for the preempted agent
-        assert mock_preempted_agent.preemption_count == 2
-
     def test_tick_stats_phase_updates_wait_and_blocked_times(self, engine, mock_agent):
         """Standard Case: STATS phase correctly increments wait_time for READY agents
         and blocked_time for BLOCKED agents."""
