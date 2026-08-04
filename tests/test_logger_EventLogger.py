@@ -34,6 +34,19 @@ def event_done():
     return mock_event
 
 
+@pytest.fixture
+def event_open_rejected():
+    mock_event = MagicMock(spec=Event)
+    mock_event.__class__ = Event
+    mock_event.time = 5
+    mock_event.type = EventType.OPEN_REJECTED
+    mock_event.agent_id = "agent_2"
+    mock_event.detail = "Mock rejected detail."
+    mock_event.path = "/mnt/data/rejected_file.txt"
+    mock_event.__str__.return_value = "Event(OPEN_REJECTED, agent_2)"
+    return mock_event
+
+
 class TestEventLogger:
     def test_initializes_with_empty_events_list(self, logger):
         assert hasattr(logger, "events")
@@ -124,3 +137,23 @@ class TestEventLogger:
         logger.printReport([mock_agent], [mock_slot], mock_vfs)
 
         assert len(logger.events) == 1
+
+    def test_get_open_rejected_events(
+        self, logger, event_arrival, event_done, event_open_rejected
+    ):
+        # Setup logger with a mix of events
+        logger.log(event_arrival)
+        logger.log(event_open_rejected)
+        logger.log(event_done)
+
+        # Fetch the formatted string for rejected events
+        result = logger.get_open_rejected_events()
+
+        assert isinstance(result, str)
+        # Check that the open rejected event's data is present
+        assert "agent_2" in result or "Event(OPEN_REJECTED, agent_2)" in result
+
+        # Check that the other event types are filtered out
+        assert "agent_1" not in result
+        assert "AGENT_ARRIVED" not in result
+        assert "OPERATION_DONE" not in result
