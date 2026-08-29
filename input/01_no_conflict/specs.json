@@ -1,0 +1,41 @@
+{
+    "settings": {
+        "max_running_agents": 2
+    },
+    "vfs": {
+        "mounts": [
+            {"source": "input/shared", "target": "/shared", "mode": "ro"},
+            {"source": "input/work", "target": "/work", "mode": "rw"}
+        ]
+    },
+    "agents": [
+        {
+            "id": "A1",
+            "priority": 1,
+            "arrival_time": 0,
+            "operations": [
+                {"type": "THINK", "duration": 2},
+                {"type": "OPEN", "path": "/shared/a.txt", "mode": "read", "handle": "read_handle"},
+                {"type": "READ", "handle": "read_handle"},
+                {"type": "CLOSE", "handle": "read_handle"},
+                {"type": "OPEN", "path": "/work/output.txt", "mode": "write", "handle": "write_handle"},
+                {"type": "WRITE", "handle": "write_handle", "data": "Hello from Agent 1"},
+                {"type": "CLOSE", "handle": "write_handle"}
+            ]
+        },
+        {
+            "id": "A2",
+            "priority": 2,
+            "arrival_time": 0,
+            "operations": [
+                {"type": "THINK", "duration": 1},
+                {"type": "OPEN", "path": "/shared/a.txt", "mode": "read", "handle": "read_handle"},
+                {"type": "READ", "handle": "read_handle"},
+                {"type": "CLOSE", "handle": "read_handle"},
+                {"type": "OPEN", "path": "/work/result.txt", "mode": "append", "handle": "write_handle"},
+                {"type": "APPEND", "handle": "write_handle", "data": "Hello from Agent 2"},
+                {"type": "CLOSE", "handle": "write_handle"}
+            ]
+        }
+    ]
+}

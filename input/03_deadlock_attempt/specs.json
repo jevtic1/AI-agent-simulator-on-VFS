@@ -1,0 +1,37 @@
+{
+    "settings": {
+        "max_running_agents": 2
+    },
+    "vfs": {
+        "mounts": [
+            {"source": "input/work", "target": "/work", "mode": "rw"}
+        ]
+    },
+    "agents": [
+        {
+            "id": "A1",
+            "priority": 1,
+            "arrival_time": 0,
+            "operations": [
+                {"type": "OPEN", "path": "/work/result.txt", "mode": "append", "handle": "a"},
+                {"type": "OPEN", "path": "/work/output.txt", "mode": "append", "handle": "b"},
+                {"type": "APPEND", "handle": "a", "data": "A1 data\n"},
+                {"type": "CLOSE", "handle": "a"},
+                {"type": "CLOSE", "handle": "b"}
+            ]
+        },
+        {
+            "id": "A2",
+            "priority": 1,
+            "arrival_time": 0,
+            "operations": [
+                {"type": "OPEN", "path": "/work/output.txt", "mode": "append", "handle": "b"},
+                {"type": "THINK", "duration": 2},
+                {"type": "OPEN", "path": "/work/result.txt", "mode": "append", "handle": "a"},
+                {"type": "APPEND", "handle": "b", "data": "A2 data\n"},
+                {"type": "CLOSE", "handle": "a"},
+                {"type": "CLOSE", "handle": "b"}
+            ]
+        }
+    ]
+}

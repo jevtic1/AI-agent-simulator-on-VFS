@@ -1,0 +1,33 @@
+{
+    "settings": {
+        "max_running_agents": 1
+    },
+    "vfs": {
+        "mounts": [
+            {"source": "input/work", "target": "/work", "mode": "rw"}
+        ]
+    },
+    "agents": [
+        {
+            "id": "A1",
+            "priority": 10,
+            "arrival_time": 0,
+            "operations": [
+                {"type": "THINK", "duration": 5},
+                {"type": "OPEN", "path": "/work/result.txt", "mode": "write", "handle": "h1"},
+                {"type": "WRITE", "handle": "h1", "data": "Background task finished"},
+                {"type": "CLOSE", "handle": "h1"}
+            ]
+        },
+        {
+            "id": "A2",
+            "priority": 1,
+            "arrival_time": 2,
+            "operations": [
+                {"type": "OPEN", "path": "/work/output.txt", "mode": "write", "handle": "h2"},
+                {"type": "WRITE", "handle": "h2", "data": "Urgent task output"},
+                {"type": "CLOSE", "handle": "h2"}
+            ]
+        }
+    ]
+}
