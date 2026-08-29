@@ -38,7 +38,12 @@ python -m src.engine_SimulationEngine input/03_deadlock_attempt/specs.json
 Na Windows operativnom sistemu umjesto obične kose crte (`/`) možete koristiti i obrnutu kosu crtu (`\`):
 
 ```cmd
-python main.py input\01_no_conflict\ulaz.txt
-python main.py input\02_preemption\ulaz.txt
-python main.py input\03_deadlock_attempt\ulaz.txt
+python main.py input\01_no_conflict\specs.json
+python main.py input\02_preemption\specs.json
+python main.py input\03_deadlock_attempt\specs.json
+```
+
+## 4. Pokretanje testova
+```bash
+python -m pytest
 ```
