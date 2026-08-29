@@ -8,3 +8,14 @@ component_dependency_tree.png
 component_dependency_tree.svg
 
 Primjeri projektnih zadataka.zip
+
+.csv
+.md
+.txt
+.ini
+.pyc
+
+__pycache__/*
+src/__pycache__/*
+tests/__pycache__/*
+.zip
