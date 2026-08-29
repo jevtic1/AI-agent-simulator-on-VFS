@@ -120,6 +120,7 @@ class SimulationEngine:
         ):
             slot.currentAgent = None
             slot.closeCurrentInterval(clock + 1)
+            slot.openNewInterval(clock + 1)
 
     @classmethod
     def run(cls, config_path: str):
